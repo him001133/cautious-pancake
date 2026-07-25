@@ -12,43 +12,23 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 print("Loading Whisper Model...")
 whisper_model = WhisperModel("base.en", device="cpu", compute_type="int8")
 
-# ASS Style Definitions (ASS Colors are &HAABBGGRR)
+# ASS Style Definitions
 STYLES = {
     "TikTok Viral Yellow": {
-        "font": "Arial",
-        "size": 80,
-        "primary": "&H00FFFFFF&",     # White
-        "active_color": "&H0000FFFF&", # Yellow
-        "outline": 5,
-        "shadow": 3,
-        "outline_color": "&H00000000&" # Black
+        "font": "Arial", "size": 80, "primary": "&H00FFFFFF&", "active_color": "&H0000FFFF&",
+        "outline": 5, "shadow": 3, "outline_color": "&H00000000&"
     },
     "Hormozi Green": {
-        "font": "Impact",
-        "size": 85,
-        "primary": "&H00FFFFFF&",
-        "active_color": "&H0000FF00&", # Neon Green
-        "outline": 7,
-        "shadow": 4,
-        "outline_color": "&H00000000&"
+        "font": "Impact", "size": 85, "primary": "&H00FFFFFF&", "active_color": "&H00FF00&",
+        "outline": 7, "shadow": 4, "outline_color": "&H00000000&"
     },
     "Cyber Cyan": {
-        "font": "Arial",
-        "size": 80,
-        "primary": "&H00FFFFFF&",
-        "active_color": "&H00FFFF00&", # Cyan
-        "outline": 5,
-        "shadow": 3,
-        "outline_color": "&H00000000&"
+        "font": "Arial", "size": 80, "primary": "&H00FFFFFF&", "active_color": "&H00FFFF00&",
+        "outline": 5, "shadow": 3, "outline_color": "&H00000000&"
     },
     "Crimson Pop": {
-        "font": "Arial",
-        "size": 80,
-        "primary": "&H00FFFFFF&",
-        "active_color": "&H000000FF&", # Crimson Red
-        "outline": 6,
-        "shadow": 3,
-        "outline_color": "&H00000000&"
+        "font": "Arial", "size": 80, "primary": "&H00FFFFFF&", "active_color": "&H000000FF&",
+        "outline": 6, "shadow": 3, "outline_color": "&H00000000&"
     }
 }
 
@@ -63,8 +43,7 @@ def seconds_to_ass_time(sec):
         seconds += 1
     return f"{hours:01d}:{minutes:02d}:{seconds:02d}.{centiseconds:02d}"
 
-def generate_ass_subtitles(words, output_ass_path, clip_start, clip_end, style_name="TikTok Viral Yellow"):
-    clip_words = [w for w in words if w["end"] >= clip_start and w["start"] <= clip_end]
+def generate_ass_subtitles(clip_words, output_ass_path, clip_start, clip_end, style_name="TikTok Viral Yellow"):
     if not clip_words:
         return
 
@@ -100,7 +79,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     for chunk in chunks:
         for idx, active_word in enumerate(chunk):
             start_t = max(0, active_word["start"] - clip_start)
-            
             if idx < len(chunk) - 1:
                 end_t = max(0, chunk[idx+1]["start"] - clip_start)
             else:
@@ -110,7 +88,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             for w in chunk:
                 clean_word = w["word"].strip()
                 if w == active_word:
-                    # Highlight active word with configured color
                     text_parts.append(f"{{\\c{config['active_color']}}}{clean_word}{{\\c{config['primary']}}}")
                 else:
                     text_parts.append(clean_word)
@@ -130,15 +107,16 @@ def get_input_videos():
         return sorted(files) if files else ["No videos found in inputs/ folder"]
     return ["No videos found in inputs/ folder"]
 
-def generate_multiple_clips(selected_file, num_clips, clip_duration, caption_style, progress=gr.Progress()):
+# --- STEP 1: TRANSCRIBE & POPULATE EDITOR TABLE ---
+def step1_transcribe_and_detect(selected_file, num_clips, clip_duration, progress=gr.Progress()):
     if not selected_file or selected_file == "No videos found in inputs/ folder":
-        return None, "❌ Please place a video inside the 'inputs/' folder and select it."
+        return None, None, "❌ Please place a video inside the 'inputs/' folder."
     
     input_path = os.path.join(INPUT_DIR, selected_file)
     if not os.path.exists(input_path):
-        return None, f"❌ Error: File '{input_path}' not found."
+        return None, None, f"❌ Error: File '{input_path}' not found."
 
-    progress(0.1, desc="🎙️ Transcribing audio and extracting word timestamps...")
+    progress(0.2, desc="🎙️ Transcribing audio and extracting micro-timestamps...")
     segments, _ = whisper_model.transcribe(input_path, word_timestamps=True)
     
     all_words = []
@@ -147,13 +125,13 @@ def generate_multiple_clips(selected_file, num_clips, clip_duration, caption_sty
             all_words.append({"word": w.word, "start": w.start, "end": w.end})
             
     if not all_words:
-        return None, "❌ No speech detected in video!"
+        return None, None, "❌ No speech detected in video!"
 
     total_duration = all_words[-1]["end"]
     clip_duration = float(clip_duration)
     num_clips = int(num_clips)
     
-    progress(0.3, desc="🧠 Analyzing speech density for high-energy hooks...")
+    progress(0.6, desc="🧠 Scoring speech density to find viral hooks...")
     step = 10.0
     candidates = []
     for start_t in range(0, int(max(0, total_duration - clip_duration)), int(step)):
@@ -172,161 +150,142 @@ def generate_multiple_clips(selected_file, num_clips, clip_duration, caption_sty
                 
     selected_windows.sort(key=lambda x: x["start"])
     
+    # Populate the Editable Dataframe Table
+    table_rows = []
+    for i, win in enumerate(selected_windows):
+        clip_label = f"Clip {i+1} ({int(win['start'])}s-{int(win['end'])}s)"
+        for w in all_words:
+            if w["start"] >= win["start"] and w["end"] <= win["end"]:
+                table_rows.append([clip_label, w["word"].strip(), round(w["start"], 2), round(w["end"], 2)])
+                
+    progress(1.0, desc="✅ Hooks Extracted! Review and edit words in the table below.")
+    return table_rows, selected_windows, f"✅ Step 1 Complete! Extracted {len(selected_windows)} clips. You can now edit any typo directly in the table below!"
+
+# --- STEP 2: RENDER FROM EDITED TABLE ---
+def step2_render_clips(selected_file, edited_table, selected_windows, caption_style, progress=gr.Progress()):
+    if not edited_table or not selected_windows:
+        return None, "❌ Please run Step 1 (Transcribe & Detect Hooks) before rendering!"
+        
+    input_path = os.path.join(INPUT_DIR, selected_file)
     generated_videos = []
     transcript_summary = []
     
     for i, win in enumerate(selected_windows):
-        progress(0.4 + (0.5 * (i / num_clips)), desc=f"🎨 Burning '{caption_style}' captions on Clip {i+1} of {len(selected_windows)}...")
+        progress(0.2 + (0.7 * (i / len(selected_windows))), desc=f"🎨 Rendering Clip {i+1} of {len(selected_windows)} with '{caption_style}'...")
         
+        clip_label = f"Clip {i+1} ({int(win['start'])}s-{int(win['end'])}s)"
+        
+        # Reconstruct word list strictly from the user's edited Dataframe rows
+        clip_words = []
+        for row in edited_table:
+            if str(row[0]) == clip_label:
+                clip_words.append({"word": str(row[1]), "start": float(row[2]), "end": float(row[3])})
+                
         base_name = os.path.splitext(selected_file)[0]
-        output_filename = f"viral_{base_name}_clip{i+1}_{int(win['start'])}s_to_{int(win['end'])}s.mp4"
+        output_filename = f"viral_v3_{base_name}_clip{i+1}.mp4"
         output_path = os.path.join(OUTPUT_DIR, output_filename)
         
-        # 1. Generate subtitle script with selected style
-        ass_filename = f"temp_captions_clip{i+1}.ass"
-        ass_path = os.path.join(OUTPUT_DIR, ass_filename)
-        generate_ass_subtitles(all_words, ass_path, win["start"], win["end"], style_name=caption_style)
+        # Generate ASS subtitle file from edited words
+        ass_path = os.path.join(OUTPUT_DIR, f"temp_v3_clip{i+1}.ass")
+        generate_ass_subtitles(clip_words, ass_path, win["start"], win["end"], style_name=caption_style)
         
-        # 2. Render 9:16 vertical short with burned subtitles
         filter_chain = f"crop=ih*(9/16):ih,scale=1080:1920,ass='{ass_path}'"
-        
         command = [
-            "ffmpeg", "-y",
-            "-i", input_path,
-            "-ss", str(win["start"]),
-            "-to", str(win["end"]),
-            "-vf", filter_chain,
-            "-c:v", "libx264",
-            "-c:a", "aac",
-            output_path
+            "ffmpeg", "-y", "-i", input_path, "-ss", str(win["start"]), "-to", str(win["end"]),
+            "-vf", filter_chain, "-c:v", "libx264", "-c:a", "aac", output_path
         ]
         
         subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-        caption_label = f"Clip {i+1}: {int(win['start'])}s - {int(win['end'])}s ({win['score']} words)"
-        generated_videos.append((output_path, caption_label))
-        transcript_summary.append(f"✨ {caption_label} [{caption_style}]")
+        caption_text = f"Clip {i+1}: {int(win['start'])}s - {int(win['end'])}s ({len(clip_words)} words)"
+        generated_videos.append((output_path, caption_text))
+        transcript_summary.append(f"🔥 {caption_text} [{caption_style}] - Burned from Custom Edits!")
         
-    progress(1.0, desc="🚀 All Viral Captioned Clips Generated!")
+    progress(1.0, desc="🚀 All Edited Shorts Generated Successfully!")
     return generated_videos, "\n".join(transcript_summary)
 
 def refresh_file_list():
     files = get_input_videos()
     return gr.Dropdown(choices=files, value=files[0] if files else None)
 
-# CSS for Live Hover Preview Cards
+# CSS & HTML Showroom
 custom_css = """
-.style-preview-container {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    margin-bottom: 15px;
-}
-.style-card {
-    background: #1e1e2e;
-    border: 2px solid #313244;
-    border-radius: 10px;
-    padding: 15px;
-    text-align: center;
-    cursor: pointer;
-    transition: all 0.3s ease;
-}
-.style-card:hover {
-    border-color: #89b4fa;
-    transform: translateY(-3px);
-    box-shadow: 0 6px 16px rgba(0,0,0,0.4);
-}
-.style-title {
-    color: #cdd6f4;
-    font-size: 14px;
-    font-weight: bold;
-    margin-bottom: 8px;
-}
-.preview-text {
-    font-size: 20px;
-    font-weight: 900;
-    color: #ffffff;
-    text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000;
-}
+.style-preview-container { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 10px; }
+.style-card { background: #1e1e2e; border: 2px solid #313244; border-radius: 8px; padding: 12px; text-align: center; cursor: pointer; transition: all 0.3s; }
+.style-card:hover { border-color: #89b4fa; transform: translateY(-2px); }
+.style-title { color: #cdd6f4; font-size: 12px; font-weight: bold; margin-bottom: 4px; }
+.preview-text { font-size: 18px; font-weight: 900; color: #fff; text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000; }
 .yellow-highlight:hover .hl-y { color: #ffff00; }
 .green-highlight:hover .hl-g { color: #00ff00; }
 .cyan-highlight:hover .hl-c { color: #00ffff; }
 .red-highlight:hover .hl-r { color: #ff0000; }
 """
 
-# HTML Hover Preview Grid Component
 hover_html = """
 <div class="style-preview-container">
-    <div class="style-card yellow-highlight">
-        <div class="style-title">TikTok Viral Yellow</div>
-        <div class="preview-text" style="font-family: Arial;">THIS IS <span class="hl-y">VIRAL</span> TEXT</div>
-    </div>
-    <div class="style-card green-highlight">
-        <div class="style-title">Hormozi Green</div>
-        <div class="preview-text" style="font-family: Impact;">GET MORE <span class="hl-g">VIEWS</span> NOW</div>
-    </div>
-    <div class="style-card cyan-highlight">
-        <div class="style-title">Cyber Cyan</div>
-        <div class="preview-text" style="font-family: Arial;">FUTURE <span class="hl-c">AI</span> CONTENT</div>
-    </div>
-    <div class="style-card red-highlight">
-        <div class="style-title">Crimson Pop</div>
-        <div class="preview-text" style="font-family: Arial;">HIGH <span class="hl-r">HOOK</span> SCORE</div>
-    </div>
+    <div class="style-card yellow-highlight"><div class="style-title">TikTok Yellow</div><div class="preview-text" style="font-family: Arial;">VIRAL <span class="hl-y">TEXT</span></div></div>
+    <div class="style-card green-highlight"><div class="style-title">Hormozi Green</div><div class="preview-text" style="font-family: Impact;">MORE <span class="hl-g">VIEWS</span></div></div>
+    <div class="style-card cyan-highlight"><div class="style-title">Cyber Cyan</div><div class="preview-text" style="font-family: Arial;">FUTURE <span class="hl-c">AI</span></div></div>
+    <div class="style-card red-highlight"><div class="style-title">Crimson Pop</div><div class="preview-text" style="font-family: Arial;">HIGH <span class="hl-r">HOOK</span></div></div>
 </div>
-<p style="text-align: center; color: #a6adc8; font-size: 12px; margin-top: -5px;">💡 Hover over any card above to preview word-highlighting animations!</p>
 """
 
-with gr.Blocks(title="AI Short Video Clipper v2.1", css=custom_css) as demo:
-    gr.Markdown("# 🎬 AI Multi-Clip Dashboard v2.1")
-    gr.Markdown("Pick a caption style preset with live hover previews and render 9:16 Shorts with customized typography.")
+with gr.Blocks(title="AI Short Video Clipper v3.0", css=custom_css) as demo:
+    # State variable to silently pass detected clip timestamps between Step 1 and Step 2
+    clip_windows_state = gr.State()
+    
+    gr.Markdown("# 🎬 AI Video Clipper v3.0: 2-Step Pro Editor")
+    gr.Markdown("Step 1: Extract viral hooks and **manually edit typos in the data table**. Step 2: Burn karaoke captions and render!")
     
     with gr.Row():
         with gr.Column(scale=1):
-            gr.Markdown("### 1️⃣ Choose Source Video")
+            gr.Markdown("### 🎙️ Step 1: Target & Transcribe")
             with gr.Row():
-                workspace_dropdown = gr.Dropdown(
-                    choices=get_input_videos(),
-                    label="Select from inputs/ Folder",
-                    value=get_input_videos()[0] if get_input_videos() else None,
-                    scale=4
-                )
-                refresh_btn = gr.Button("🔄 Refresh", scale=1)
+                workspace_dropdown = gr.Dropdown(choices=get_input_videos(), label="Select Source Video", value=get_input_videos()[0] if get_input_videos() else None, scale=4)
+                refresh_btn = gr.Button("🔄", scale=1)
             
-            gr.Markdown("### 2️⃣ Caption Style Selector")
+            num_clips_input = gr.Slider(minimum=1, maximum=5, value=2, step=1, label="Number of Clips")
+            clip_duration_input = gr.Slider(minimum=15, maximum=60, value=25, step=5, label="Duration (seconds)")
+            
+            step1_btn = gr.Button("🎙️ Step 1: Detect Hooks & Transcribe", variant="primary")
+            status_box = gr.Textbox(label="Status", value="⏳ Waiting for Step 1...", interactive=False, lines=2)
+            
+            gr.Markdown("---")
+            gr.Markdown("### 🔥 Step 2: Style & Render")
             gr.HTML(hover_html)
+            style_selector = gr.Radio(choices=["TikTok Viral Yellow", "Hormozi Green", "Cyber Cyan", "Crimson Pop"], value="TikTok Viral Yellow", label="Caption Preset")
             
-            style_selector = gr.Radio(
-                choices=["TikTok Viral Yellow", "Hormozi Green", "Cyber Cyan", "Crimson Pop"],
-                value="TikTok Viral Yellow",
-                label="Select Render Style"
-            )
-            
-            gr.Markdown("### 3️⃣ Clip Settings")
-            num_clips_input = gr.Slider(minimum=1, maximum=6, value=3, step=1, label="Number of Viral Clips")
-            clip_duration_input = gr.Slider(minimum=15, maximum=60, value=30, step=5, label="Clip Duration (seconds)")
-                
-            submit_btn = gr.Button("🔥 Generate Captioned Shorts", variant="primary")
-            
-            transcript_output = gr.Textbox(label="Processing Summary", lines=5, interactive=False)
+            step2_btn = gr.Button("🔥 Step 2: Burn Captions & Render Shorts", variant="primary")
             
         with gr.Column(scale=2):
-            gr.Markdown("### 📺 Captioned Video Gallery")
-            video_gallery = gr.Gallery(
-                label="Generated Shorts",
-                show_label=True,
-                columns=2,
-                rows=2,
-                object_fit="contain",
-                height=600
+            gr.Markdown("### 📝 Interactive Transcript Editor (Click any word cell to edit!)")
+            # 🔥 CHANGED: height=300 -> max_height=300 to conform to Gradio 5.x standards
+            transcript_editor = gr.Dataframe(
+                headers=["Clip Label", "Word (Click to Edit)", "Start (s)", "End (s)"],
+                datatype=["str", "str", "number", "number"],
+                type="array",
+                interactive=True,
+                row_count=(10, "dynamic"),
+                col_count=(4, "fixed"),
+                max_height=300
             )
+            
+            gr.Markdown("### 📺 Final Render Gallery")
+            video_gallery = gr.Gallery(label="Generated 9:16 Shorts", show_label=True, columns=2, rows=1, object_fit="contain", height=450)
 
+    # Event Listeners
     refresh_btn.click(fn=refresh_file_list, outputs=[workspace_dropdown])
     
-    submit_btn.click(
-        fn=generate_multiple_clips,
-        inputs=[workspace_dropdown, num_clips_input, clip_duration_input, style_selector],
-        outputs=[video_gallery, transcript_output]
+    step1_btn.click(
+        fn=step1_transcribe_and_detect,
+        inputs=[workspace_dropdown, num_clips_input, clip_duration_input],
+        outputs=[transcript_editor, clip_windows_state, status_box]
+    )
+    
+    step2_btn.click(
+        fn=step2_render_clips,
+        inputs=[workspace_dropdown, transcript_editor, clip_windows_state, style_selector],
+        outputs=[video_gallery, status_box]
     )
 
 if __name__ == "__main__":
