@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Video Clipper Pro — Turn Long Videos into Viral 9:16 Shorts</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Impact&family=Inter:wght@400;600;800;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0b0f19;
+            --bg-card: #151c2f;
+            --border-color: #243049;
+            --text-main: #f1f5f9;
+            --text-muted: #94a3b8;
+            --accent-blue: #38bdf8;
+            --accent-purple: #818cf8;
+            --yellow-hl: #ffff00;
+            --green-hl: #00ff00;
+            --cyan-hl: #00ffff;
+            --red-hl: #ff0055;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* Ambient Background Glow */
+        .glow-blob {
+            position: absolute;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(56, 189, 248, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
+            top: -200px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        header {
+            position: relative;
+            z-index: 10;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .logo {
+            font-weight: 900;
+            font-size: 22px;
+            background: linear-gradient(to right, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .badge {
+            background: rgba(56, 189, 248, 0.1);
+            color: var(--accent-blue);
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        /* Hero Section */
+        .hero {
+            position: relative;
+            z-index: 10;
+            max-width: 900px;
+            margin: 80px auto 60px;
+            text-align: center;
+            padding: 0 20px;
+        }
+
+        h1 {
+            font-size: 56px;
+            font-weight: 900;
+            line-height: 1.1;
+            margin-bottom: 24px;
+            letter-spacing: -1px;
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, #fff 0%, #94a3b8 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 20px;
+            color: var(--text-muted);
+            margin-bottom: 40px;
+            max-width: 650px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .cta-btn {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
+            color: #000;
+            font-weight: 800;
+            font-size: 18px;
+            padding: 16px 36px;
+            border-radius: 12px;
+            text-decoration: none;
+            box-shadow: 0 10px 30px -10px rgba(56, 189, 248, 0.5);
+            transition: all 0.3s ease;
+        }
+
+        .cta-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 15px 35px -5px rgba(56, 189, 248, 0.7);
+        }
+
+        /* Features Grid */
+        .section-title {
+            text-align: center;
+            font-size: 32px;
+            font-weight: 800;
+            margin: 80px 0 16px;
+        }
+
+        .section-subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 40px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 24px;
+            max-width: 1100px;
+            margin: 0 auto 80px;
+            padding: 0 20px;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 32px 24px;
+            border-radius: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        .card:hover {
+            border-color: var(--accent-blue);
+        }
+
+        .icon {
+            font-size: 32px;
+            margin-bottom: 16px;
+        }
+
+        .card h3 {
+            font-size: 20px;
+            margin-bottom: 12px;
+        }
+
+        .card p {
+            color: var(--text-muted);
+            font-size: 15px;
+        }
+
+        /* Interactive Showroom */
+        .showroom {
+            max-width: 1000px;
+            margin: 0 auto 100px;
+            padding: 40px;
+            background: rgba(21, 28, 47, 0.5);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            text-align: center;
+        }
+
+        .style-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 30px;
+        }
+
+        .style-box {
+            background: #0b0f19;
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            padding: 24px 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .style-box:hover {
+            transform: scale(1.05);
+            border-color: var(--accent-blue);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+
+        .style-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 12px;
+        }
+
+        .preview-typography {
+            font-size: 22px;
+            font-weight: 900;
+            color: #fff;
+            text-shadow: -2px -2px 0 #000, 2px -2px 0 #000, -2px 2px 0 #000, 2px 2px 0 #000;
+        }
+
+        /* Hover Karaoke Animations */
+        .style-box.yellow:hover .hl { color: var(--yellow-hl); }
+        .style-box.green:hover .hl { color: var(--green-hl); }
+        .style-box.cyan:hover .hl { color: var(--cyan-hl); }
+        .style-box.red:hover .hl { color: var(--red-hl); }
+
+        footer {
+            text-align: center;
+            padding: 40px 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        @media (max-width: 768px) {
+            h1 { font-size: 38px; }
+            .hero p { font-size: 16px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="glow-blob"></div>
+
+    <header>
+        <div class="logo">
+            <span>🎬 AI Clipper Pro</span>
+            <span class="badge">v2.1 Engine</span>
+        </div>
+        <a href="#demo" style="color: var(--text-main); text-decoration: none; font-weight: 600; font-size: 14px;">Live Showroom ↓</a>
+    </header>
+
+    <section class="hero">
+        <h1>Turn Long-Form Videos Into <span class="gradient-text">Viral 9:16 Shorts.</span></h1>
+        <p>Drop in your podcasts or raw footage. Our local AI engine detects high-energy hooks, automatically crops to vertical 9:16, and burns in word-by-word animated karaoke typography.</p>
+        <a href="https://reimagined-space-pancake-x5q7g4qvxqx2vwv4-7860.app.github.dev/" class="cta-btn" target="_blank">Launch Local Dashboard 🚀</a>
+    </section>
+
+    <h2 class="section-title">Built For Maximum Retention</h2>
+    <p class="section-subtitle">Everything you need to automate your short-form content pipeline.</p>
+
+    <section class="grid">
+        <div class="card">
+            <div class="icon">🎙️</div>
+            <h3>Speech Density AI</h3>
+            <p>Powered by Faster-Whisper. Scans your audio timeline to pinpoint dialogue-heavy storytelling arcs and ignores dead air automatically.</p>
+        </div>
+        <div class="card">
+            <div class="icon">✂️</div>
+            <h3>Auto 9:16 Reframing</h3>
+            <p>Never manually reframe again. Instantly slices landscape 16:9 footage and scales it to pristine 1080x1920 vertical resolution using FFmpeg.</p>
+        </div>
+        <div class="card">
+            <div class="icon">🎨</div>
+            <h3>Karaoke Typography</h3>
+            <p>85% of users watch without sound. Keep them hooked with word-by-word highlighted captions burned directly into the video pixels.</p>
+        </div>
+        <div class="card">
+            <div class="icon">🔒</div>
+            <h3>100% Local & Private</h3>
+            <p>No expensive subscription fees or cloud storage limits. Runs directly from your workspace folder with zero watermarks.</p>
+        </div>
+    </section>
+
+    <section class="showroom" id="demo">
+        <h2 style="font-size: 28px; margin-bottom: 8px;">Interactive Caption Showroom</h2>
+        <p style="color: var(--text-muted); font-size: 15px;">Hover over any style preset below to preview the live word-highlighting animations.</p>
+        
+        <div class="style-grid">
+            <div class="style-box yellow">
+                <div class="style-label">TikTok Viral Yellow</div>
+                <div class="preview-typography" style="font-family: 'Inter', sans-serif;">THIS IS <span class="hl">VIRAL</span> TEXT</div>
+            </div>
+            <div class="style-box green">
+                <div class="style-label">Hormozi Green</div>
+                <div class="preview-typography" style="font-family: 'Impact', sans-serif; font-size: 26px;">GET MORE <span class="hl">VIEWS</span> NOW</div>
+            </div>
+            <div class="style-box cyan">
+                <div class="style-label">Cyber Cyan</div>
+                <div class="preview-typography" style="font-family: 'Inter', sans-serif;">FUTURE <span class="hl">AI</span> CONTENT</div>
+            </div>
+            <div class="style-box red">
+                <div class="style-label">Crimson Pop</div>
+                <div class="preview-typography" style="font-family: 'Inter', sans-serif;">HIGH <span class="hl">HOOK</span> SCORE</div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <p>Powered by Faster-Whisper, FFmpeg, and Gradio • Built for High-Speed Editing Workflows.</p>
+    </footer>
+
+</body>
+</html>
