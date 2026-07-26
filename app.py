@@ -20,7 +20,7 @@ os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 print("Loading Multilingual Whisper Model...")
-whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
 
 # --- SELF-LEARNING DICTIONARY HELPERS ---
 def load_dictionary():
