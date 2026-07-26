@@ -1,18 +1,54 @@
 import os
+import json
 import subprocess
 import gradio as gr
 from faster_whisper import WhisperModel
 
+# Attempt to import transliteration library for Hinglish
+try:
+    from indic_transliteration import sanscript
+    from indic_transliteration.sanscript import transliterate
+    INDIC_AVAILABLE = True
+except ImportError:
+    INDIC_AVAILABLE = False
+
 INPUT_DIR = "inputs"
 OUTPUT_DIR = "outputs"
+DICT_FILE = "custom_dictionary.json"
 
 os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-print("Loading Whisper Model...")
-whisper_model = WhisperModel("base.en", device="cpu", compute_type="int8")
+print("Loading Multilingual Whisper Model...")
+whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
 
-# ASS Style Definitions
+# --- SELF-LEARNING DICTIONARY HELPERS ---
+def load_dictionary():
+    if os.path.exists(DICT_FILE):
+        try:
+            with open(DICT_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+def save_to_dictionary(new_entries):
+    current_dict = load_dictionary()
+    current_dict.update(new_entries)
+    with open(DICT_FILE, "w", encoding="utf-8") as f:
+        json.dump(current_dict, f, indent=4, ensure_ascii=False)
+
+# --- HINGLISH TRANSLITERATION HELPER ---
+def to_hinglish(text):
+    if not INDIC_AVAILABLE:
+        return text
+    try:
+        romanized = transliterate(text, sanscript.DEVANAGARI, sanscript.ITRANS)
+        return romanized.lower().replace("aa", "a").replace("ii", "i")
+    except Exception:
+        return text
+
+# --- ASS STYLE DEFINITIONS ---
 STYLES = {
     "TikTok Viral Yellow": {
         "font": "Arial", "size": 80, "primary": "&H00FFFFFF&", "active_color": "&H0000FFFF&",
@@ -62,7 +98,6 @@ Style: CustomStyle,{config['font']},{config['size']},{config['primary']},&H00000
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     events = []
-    
     chunks = []
     current_chunk = []
     for i, w in enumerate(clip_words):
@@ -107,17 +142,19 @@ def get_input_videos():
         return sorted(files) if files else ["No videos found in inputs/ folder"]
     return ["No videos found in inputs/ folder"]
 
-# --- STEP 1: TRANSCRIBE & POPULATE EDITOR TABLE ---
-def step1_transcribe_and_detect(selected_file, num_clips, clip_duration, progress=gr.Progress()):
+# --- STEP 1: MULTILINGUAL TRANSCRIBE & DICTIONARY APPLY ---
+def step1_transcribe_and_detect(selected_file, language_mode, num_clips, clip_duration, progress=gr.Progress()):
     if not selected_file or selected_file == "No videos found in inputs/ folder":
-        return None, None, "❌ Please place a video inside the 'inputs/' folder."
+        return None, None, None, "❌ Please place a video inside the 'inputs/' folder."
     
     input_path = os.path.join(INPUT_DIR, selected_file)
     if not os.path.exists(input_path):
-        return None, None, f"❌ Error: File '{input_path}' not found."
+        return None, None, None, f"❌ Error: File '{input_path}' not found."
 
-    progress(0.2, desc="🎙️ Transcribing audio and extracting micro-timestamps...")
-    segments, _ = whisper_model.transcribe(input_path, word_timestamps=True)
+    progress(0.2, desc=f"🎙️ Transcribing audio ({language_mode})...")
+    
+    lang_code = "hi" if "Hindi" in language_mode else "en" if "English" in language_mode else None
+    segments, _ = whisper_model.transcribe(input_path, language=lang_code, word_timestamps=True)
     
     all_words = []
     for segment in segments:
@@ -125,7 +162,7 @@ def step1_transcribe_and_detect(selected_file, num_clips, clip_duration, progres
             all_words.append({"word": w.word, "start": w.start, "end": w.end})
             
     if not all_words:
-        return None, None, "❌ No speech detected in video!"
+        return None, None, None, "❌ No speech detected in video!"
 
     total_duration = all_words[-1]["end"]
     clip_duration = float(clip_duration)
@@ -150,23 +187,46 @@ def step1_transcribe_and_detect(selected_file, num_clips, clip_duration, progres
                 
     selected_windows.sort(key=lambda x: x["start"])
     
-    # Populate the Editable Dataframe Table
+    custom_dict = load_dictionary()
     table_rows = []
+    
     for i, win in enumerate(selected_windows):
         clip_label = f"Clip {i+1} ({int(win['start'])}s-{int(win['end'])}s)"
         for w in all_words:
             if w["start"] >= win["start"] and w["end"] <= win["end"]:
-                table_rows.append([clip_label, w["word"].strip(), round(w["start"], 2), round(w["end"], 2)])
+                word_str = w["word"].strip()
+                
+                if "Hindi" in language_mode:
+                    word_str = to_hinglish(word_str)
+                
+                lookup_key = word_str.lower()
+                if lookup_key in custom_dict:
+                    word_str = custom_dict[lookup_key]
+                    
+                table_rows.append([clip_label, word_str, round(w["start"], 2), round(w["end"], 2)])
                 
     progress(1.0, desc="✅ Hooks Extracted! Review and edit words in the table below.")
-    return table_rows, selected_windows, f"✅ Step 1 Complete! Extracted {len(selected_windows)} clips. You can now edit any typo directly in the table below!"
+    return table_rows, table_rows, selected_windows, f"✅ Step 1 Complete! Extracted {len(selected_windows)} clips using {language_mode}. Applied {len(custom_dict)} learned spelling rules!"
 
-# --- STEP 2: RENDER FROM EDITED TABLE ---
-def step2_render_clips(selected_file, edited_table, selected_windows, caption_style, progress=gr.Progress()):
+# --- STEP 2: RENDER & LEARN NEW SPELLINGS ---
+def step2_render_clips(selected_file, original_table, edited_table, selected_windows, caption_style, progress=gr.Progress()):
     if not edited_table or not selected_windows:
         return None, "❌ Please run Step 1 (Transcribe & Detect Hooks) before rendering!"
         
     input_path = os.path.join(INPUT_DIR, selected_file)
+    
+    new_entries = {}
+    if original_table and len(original_table) == len(edited_table):
+        for orig_row, edit_row in zip(original_table, edited_table):
+            orig_word = str(orig_row[1]).strip()
+            edit_word = str(edit_row[1]).strip()
+            if orig_word != edit_word and len(orig_word) > 1:
+                new_entries[orig_word.lower()] = edit_word
+                
+    if new_entries:
+        save_to_dictionary(new_entries)
+        print(f"🧠 Learned {len(new_entries)} new custom spellings: {new_entries}")
+
     generated_videos = []
     transcript_summary = []
     
@@ -175,18 +235,16 @@ def step2_render_clips(selected_file, edited_table, selected_windows, caption_st
         
         clip_label = f"Clip {i+1} ({int(win['start'])}s-{int(win['end'])}s)"
         
-        # Reconstruct word list strictly from the user's edited Dataframe rows
         clip_words = []
         for row in edited_table:
             if str(row[0]) == clip_label:
                 clip_words.append({"word": str(row[1]), "start": float(row[2]), "end": float(row[3])})
                 
         base_name = os.path.splitext(selected_file)[0]
-        output_filename = f"viral_v3_{base_name}_clip{i+1}.mp4"
+        output_filename = f"viral_v3.4_{base_name}_clip{i+1}.mp4"
         output_path = os.path.join(OUTPUT_DIR, output_filename)
         
-        # Generate ASS subtitle file from edited words
-        ass_path = os.path.join(OUTPUT_DIR, f"temp_v3_clip{i+1}.ass")
+        ass_path = os.path.join(OUTPUT_DIR, f"temp_v3.4_clip{i+1}.ass")
         generate_ass_subtitles(clip_words, ass_path, win["start"], win["end"], style_name=caption_style)
         
         filter_chain = f"crop=ih*(9/16):ih,scale=1080:1920,ass='{ass_path}'"
@@ -199,10 +257,11 @@ def step2_render_clips(selected_file, edited_table, selected_windows, caption_st
         
         caption_text = f"Clip {i+1}: {int(win['start'])}s - {int(win['end'])}s ({len(clip_words)} words)"
         generated_videos.append((output_path, caption_text))
-        transcript_summary.append(f"🔥 {caption_text} [{caption_style}] - Burned from Custom Edits!")
+        transcript_summary.append(f"🔥 {caption_text} [{caption_style}] - Burned & Saved Spellings!")
         
-    progress(1.0, desc="🚀 All Edited Shorts Generated Successfully!")
-    return generated_videos, "\n".join(transcript_summary)
+    learn_msg = f" 🧠 Learned {len(new_entries)} new spellings!" if new_entries else ""
+    progress(1.0, desc="🚀 All Shorts Generated Successfully!")
+    return generated_videos, "\n".join(transcript_summary) + learn_msg
 
 def refresh_file_list():
     files = get_input_videos()
@@ -230,12 +289,12 @@ hover_html = """
 </div>
 """
 
-with gr.Blocks(title="AI Short Video Clipper v3.0", css=custom_css) as demo:
-    # State variable to silently pass detected clip timestamps between Step 1 and Step 2
+with gr.Blocks(title="AI Short Video Clipper v3.4", css=custom_css) as demo:
     clip_windows_state = gr.State()
+    original_table_state = gr.State()
     
-    gr.Markdown("# 🎬 AI Video Clipper v3.0: 2-Step Pro Editor")
-    gr.Markdown("Step 1: Extract viral hooks and **manually edit typos in the data table**. Step 2: Burn karaoke captions and render!")
+    gr.Markdown("# 🎬 AI Video Clipper v3.4: Multilingual Hinglish + Self-Learning Engine")
+    gr.Markdown("Place videos in your `inputs/` folder, extract viral hooks, transcribe in **English or Hindi (Hinglish)**, and burn karaoke subtitles!")
     
     with gr.Row():
         with gr.Column(scale=1):
@@ -244,11 +303,22 @@ with gr.Blocks(title="AI Short Video Clipper v3.0", css=custom_css) as demo:
                 workspace_dropdown = gr.Dropdown(choices=get_input_videos(), label="Select Source Video", value=get_input_videos()[0] if get_input_videos() else None, scale=4)
                 refresh_btn = gr.Button("🔄", scale=1)
             
+            language_selector = gr.Dropdown(
+                choices=["English", "Hindi (Auto-Hinglish Subtitles)", "Auto-Detect"],
+                value="English",
+                label="Audio Language Mode"
+            )
+            
             num_clips_input = gr.Slider(minimum=1, maximum=5, value=2, step=1, label="Number of Clips")
             clip_duration_input = gr.Slider(minimum=15, maximum=60, value=25, step=5, label="Duration (seconds)")
             
             step1_btn = gr.Button("🎙️ Step 1: Detect Hooks & Transcribe", variant="primary")
-            status_box = gr.Textbox(label="Status", value="⏳ Waiting for Step 1...", interactive=False, lines=2)
+            
+            # Status Box placed above the stop button for instant feedback
+            status_box = gr.Textbox(label="System Status", value="⏳ Ready. Select a video from inputs/ and click Step 1.", interactive=False, lines=2)
+            
+            # --- NEW DEDICATED STOP BUTTON ---
+            stop_btn = gr.Button("🛑 Stop Active Process", variant="stop")
             
             gr.Markdown("---")
             gr.Markdown("### 🔥 Step 2: Style & Render")
@@ -258,35 +328,41 @@ with gr.Blocks(title="AI Short Video Clipper v3.0", css=custom_css) as demo:
             step2_btn = gr.Button("🔥 Step 2: Burn Captions & Render Shorts", variant="primary")
             
         with gr.Column(scale=2):
-            gr.Markdown("### 📝 Interactive Transcript Editor (Click any word cell to edit!)")
-            # 🔥 CHANGED: height=300 -> max_height=300 to conform to Gradio 5.x standards
+            gr.Markdown("### 📝 Interactive Transcript Editor (Click any word to edit typos!)")
             transcript_editor = gr.Dataframe(
                 headers=["Clip Label", "Word (Click to Edit)", "Start (s)", "End (s)"],
                 datatype=["str", "str", "number", "number"],
                 type="array",
                 interactive=True,
                 row_count=(10, "dynamic"),
-                col_count=(4, "fixed"),
-                max_height=300
+                col_count=(4, "fixed")
             )
             
             gr.Markdown("### 📺 Final Render Gallery")
             video_gallery = gr.Gallery(label="Generated 9:16 Shorts", show_label=True, columns=2, rows=1, object_fit="contain", height=450)
 
-    # Event Listeners
+    # Event Listeners (Stored in variables so they can be canceled)
     refresh_btn.click(fn=refresh_file_list, outputs=[workspace_dropdown])
     
-    step1_btn.click(
+    step1_event = step1_btn.click(
         fn=step1_transcribe_and_detect,
-        inputs=[workspace_dropdown, num_clips_input, clip_duration_input],
-        outputs=[transcript_editor, clip_windows_state, status_box]
+        inputs=[workspace_dropdown, language_selector, num_clips_input, clip_duration_input],
+        outputs=[transcript_editor, original_table_state, clip_windows_state, status_box]
     )
     
-    step2_btn.click(
+    step2_event = step2_btn.click(
         fn=step2_render_clips,
-        inputs=[workspace_dropdown, transcript_editor, clip_windows_state, style_selector],
+        inputs=[workspace_dropdown, original_table_state, transcript_editor, clip_windows_state, style_selector],
         outputs=[video_gallery, status_box]
+    )
+    
+    # --- WIRED CANCEL ACTION ---
+    stop_btn.click(
+        fn=lambda: "🛑 Process interrupted and stopped by user!",
+        inputs=None,
+        outputs=[status_box],
+        cancels=[step1_event, step2_event]
     )
 
 if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=False)
+    demo.launch(server_name="0.0.0.0", server_port=7860, share=True)
