@@ -20,7 +20,7 @@ os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 print("Loading Multilingual Whisper Model...")
-whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
+whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
 
 # --- SELF-LEARNING DICTIONARY HELPERS ---
 def load_dictionary():
@@ -48,22 +48,22 @@ def to_hinglish(text):
     except Exception:
         return text
 
-# --- ASS STYLE DEFINITIONS ---
+# --- ASS STYLE DEFINITIONS (UNIVERSAL LINUX FONTS) ---
 STYLES = {
     "TikTok Viral Yellow": {
-        "font": "Arial", "size": 80, "primary": "&H00FFFFFF&", "active_color": "&H0000FFFF&",
+        "font": "DejaVu Sans", "size": 80, "primary": "&H00FFFFFF&", "active_color": "&H0000FFFF&",
         "outline": 5, "shadow": 3, "outline_color": "&H00000000&"
     },
     "Hormozi Green": {
-        "font": "Impact", "size": 85, "primary": "&H00FFFFFF&", "active_color": "&H00FF00&",
+        "font": "DejaVu Sans", "size": 85, "primary": "&H00FFFFFF&", "active_color": "&H00FF00&",
         "outline": 7, "shadow": 4, "outline_color": "&H00000000&"
     },
     "Cyber Cyan": {
-        "font": "Arial", "size": 80, "primary": "&H00FFFFFF&", "active_color": "&H00FFFF00&",
+        "font": "DejaVu Sans", "size": 80, "primary": "&H00FFFFFF&", "active_color": "&H00FFFF00&",
         "outline": 5, "shadow": 3, "outline_color": "&H00000000&"
     },
     "Crimson Pop": {
-        "font": "Arial", "size": 80, "primary": "&H00FFFFFF&", "active_color": "&H000000FF&",
+        "font": "DejaVu Sans", "size": 80, "primary": "&H00FFFFFF&", "active_color": "&H000000FF&",
         "outline": 6, "shadow": 3, "outline_color": "&H00000000&"
     }
 }
@@ -241,19 +241,25 @@ def step2_render_clips(selected_file, original_table, edited_table, selected_win
                 clip_words.append({"word": str(row[1]), "start": float(row[2]), "end": float(row[3])})
                 
         base_name = os.path.splitext(selected_file)[0]
-        output_filename = f"viral_v3.4_{base_name}_clip{i+1}.mp4"
+        output_filename = f"viral_v3.6_{base_name}_clip{i+1}.mp4"
         output_path = os.path.join(OUTPUT_DIR, output_filename)
         
-        ass_path = os.path.join(OUTPUT_DIR, f"temp_v3.4_clip{i+1}.ass")
+        ass_path = os.path.join(OUTPUT_DIR, f"temp_v3.6_clip{i+1}.ass")
         generate_ass_subtitles(clip_words, ass_path, win["start"], win["end"], style_name=caption_style)
         
+        # Swapped to "ass=" filter which forces libass renderer directly
         filter_chain = f"crop=ih*(9/16):ih,scale=1080:1920,ass='{ass_path}'"
+        
+        clip_duration_real = win["end"] - win["start"]
+        
+        # MOVED -ss BEFORE -i: This resets timestamps to 0 and jumps instantly to the cut!
         command = [
-            "ffmpeg", "-y", "-i", input_path, "-ss", str(win["start"]), "-to", str(win["end"]),
+            "ffmpeg", "-y", "-ss", str(win["start"]), "-i", input_path, "-t", str(clip_duration_real),
             "-vf", filter_chain, "-c:v", "libx264", "-c:a", "aac", output_path
         ]
         
-        subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print(f"🎬 Running FFmpeg Command for Clip {i+1}: {' '.join(command)}")
+        subprocess.run(command)
         
         caption_text = f"Clip {i+1}: {int(win['start'])}s - {int(win['end'])}s ({len(clip_words)} words)"
         generated_videos.append((output_path, caption_text))
@@ -282,18 +288,18 @@ custom_css = """
 
 hover_html = """
 <div class="style-preview-container">
-    <div class="style-card yellow-highlight"><div class="style-title">TikTok Yellow</div><div class="preview-text" style="font-family: Arial;">VIRAL <span class="hl-y">TEXT</span></div></div>
-    <div class="style-card green-highlight"><div class="style-title">Hormozi Green</div><div class="preview-text" style="font-family: Impact;">MORE <span class="hl-g">VIEWS</span></div></div>
-    <div class="style-card cyan-highlight"><div class="style-title">Cyber Cyan</div><div class="preview-text" style="font-family: Arial;">FUTURE <span class="hl-c">AI</span></div></div>
-    <div class="style-card red-highlight"><div class="style-title">Crimson Pop</div><div class="preview-text" style="font-family: Arial;">HIGH <span class="hl-r">HOOK</span></div></div>
+    <div class="style-card yellow-highlight"><div class="style-title">TikTok Yellow</div><div class="preview-text" style="font-family: DejaVu Sans;">VIRAL <span class="hl-y">TEXT</span></div></div>
+    <div class="style-card green-highlight"><div class="style-title">Hormozi Green</div><div class="preview-text" style="font-family: DejaVu Sans;">MORE <span class="hl-g">VIEWS</span></div></div>
+    <div class="style-card cyan-highlight"><div class="style-title">Cyber Cyan</div><div class="preview-text" style="font-family: DejaVu Sans;">FUTURE <span class="hl-c">AI</span></div></div>
+    <div class="style-card red-highlight"><div class="style-title">Crimson Pop</div><div class="preview-text" style="font-family: DejaVu Sans;">HIGH <span class="hl-r">HOOK</span></div></div>
 </div>
 """
 
-with gr.Blocks(title="AI Short Video Clipper v3.4", css=custom_css) as demo:
+with gr.Blocks(title="AI Short Video Clipper v3.6", css=custom_css) as demo:
     clip_windows_state = gr.State()
     original_table_state = gr.State()
     
-    gr.Markdown("# 🎬 AI Video Clipper v3.4: Multilingual Hinglish + Self-Learning Engine")
+    gr.Markdown("# 🎬 AI Video Clipper v3.6: Fast-Seek Karaoke Subtitle Engine")
     gr.Markdown("Place videos in your `inputs/` folder, extract viral hooks, transcribe in **English or Hindi (Hinglish)**, and burn karaoke subtitles!")
     
     with gr.Row():
@@ -313,11 +319,8 @@ with gr.Blocks(title="AI Short Video Clipper v3.4", css=custom_css) as demo:
             clip_duration_input = gr.Slider(minimum=15, maximum=60, value=25, step=5, label="Duration (seconds)")
             
             step1_btn = gr.Button("🎙️ Step 1: Detect Hooks & Transcribe", variant="primary")
-            
-            # Status Box placed above the stop button for instant feedback
             status_box = gr.Textbox(label="System Status", value="⏳ Ready. Select a video from inputs/ and click Step 1.", interactive=False, lines=2)
             
-            # --- NEW DEDICATED STOP BUTTON ---
             stop_btn = gr.Button("🛑 Stop Active Process", variant="stop")
             
             gr.Markdown("---")
@@ -341,7 +344,7 @@ with gr.Blocks(title="AI Short Video Clipper v3.4", css=custom_css) as demo:
             gr.Markdown("### 📺 Final Render Gallery")
             video_gallery = gr.Gallery(label="Generated 9:16 Shorts", show_label=True, columns=2, rows=1, object_fit="contain", height=450)
 
-    # Event Listeners (Stored in variables so they can be canceled)
+    # Event Listeners
     refresh_btn.click(fn=refresh_file_list, outputs=[workspace_dropdown])
     
     step1_event = step1_btn.click(
@@ -356,7 +359,6 @@ with gr.Blocks(title="AI Short Video Clipper v3.4", css=custom_css) as demo:
         outputs=[video_gallery, status_box]
     )
     
-    # --- WIRED CANCEL ACTION ---
     stop_btn.click(
         fn=lambda: "🛑 Process interrupted and stopped by user!",
         inputs=None,
