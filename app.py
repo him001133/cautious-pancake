@@ -3,330 +3,257 @@ import re
 import json
 import subprocess
 import numpy as np
-import gradio as gr
+import streamlit as st
 from faster_whisper import WhisperModel
-
-# Updated Google Gen AI SDK imports
 from google import genai
 from google.genai import types
 
-# Import OpenCV for computer vision face tracking
-try:
-    import cv2
-    CV2_AVAILABLE = True
-except ImportError:
-    CV2_AVAILABLE = False
+# Page Configuration
+st.set_page_config(page_title="AutoDirector AI", page_icon="🎬", layout="wide")
 
 INPUT_DIR = "inputs"
 OUTPUT_DIR = "outputs"
+PREVIEW_DIR = "previews"
 
 os.makedirs(INPUT_DIR, exist_ok=True)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(PREVIEW_DIR, exist_ok=True)
 
-print("Loading Whisper Model...")
-whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+@st.cache_resource
+def load_whisper_model():
+    return WhisperModel("base", device="cpu", compute_type="int8")
 
-def clear_output_folder():
-    if os.path.exists(OUTPUT_DIR):
-        for filename in os.listdir(OUTPUT_DIR):
-            file_path = os.path.join(OUTPUT_DIR, filename)
-            try:
-                if os.path.isfile(file_path):
-                    os.unlink(file_path)
-            except Exception:
-                pass
+whisper_model = load_whisper_model()
 
-# --- AUTO-DIRECTOR: SMART FRAMING CALCULATOR ---
-def get_auto_framing_filter(video_path, start_t, end_t):
-    if not CV2_AVAILABLE or not os.path.exists(video_path):
-        return "crop=ih*(9/16):ih,scale=1080:1920", "Standard Center Crop (Fallback)"
+# Session State Initialization
+if "current_step" not in st.session_state:
+    st.session_state.current_step = "upload" # 'upload', 'dashboard', 'editor'
+if "active_video" not in st.session_state:
+    st.session_state.active_video = None
+if "detected_clips" not in st.session_state:
+    st.session_state.detected_clips = []
+if "selected_clip_idx" not in st.session_state:
+    st.session_state.selected_clip_idx = 0
+if "framing_mode" not in st.session_state:
+    st.session_state.framing_mode = "Vertical"
+if "crop_x_percent" not in st.session_state:
+    st.session_state.crop_x_percent = 50
 
-    cap = cv2.VideoCapture(video_path)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+# --- FFMPEG FILTER BUILDER FOR SCREEN 4 LAYOUT PRESETS ---
+def build_layout_ffmpeg_filter(mode, crop_x_pct=50):
+    x_factor = crop_x_pct / 100.0
     
-    if width == 0 or height == 0:
-        cap.release()
-        return "crop=ih*(9/16):ih,scale=1080:1920", "Standard Center Crop (Fallback)"
-
-    crop_w = int(height * (9 / 16))
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    
-    sample_count = 10
-    duration = max(1.0, end_t - start_t)
-    step = duration / (sample_count + 1)
-    
-    face_counts = []
-    detected_x_centers = []
-    
-    for i in range(1, sample_count + 1):
-        sample_time = start_t + (i * step)
-        cap.set(cv2.CAP_PROP_POS_MSEC, sample_time * 1000)
-        ret, frame = cap.read()
-        if not ret:
-            continue
-            
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=6, minSize=(80, 80))
+    if mode == "Vertical":
+        return f"crop=ih*(9/16):ih:n*(iw-crop_w)*{x_factor}:0,scale=1080:1920"
         
-        face_counts.append(len(faces))
+    elif mode == "Split":
+        return (
+            "split=2[top][bot];"
+            f"[top]crop=iw/2:ih:0:0,scale=1080:960[t_scaled];"
+            f"[bot]crop=iw/2:ih:iw/2:0,scale=1080:960[b_scaled];"
+            "[t_scaled][b_scaled]vstack=inputs=2"
+        )
         
-        if len(faces) == 1:
-            fx, fy, fw, fh = faces[0]
-            detected_x_centers.append(fx + (fw // 2))
-            
-    cap.release()
-    
-    median_faces = int(np.median(face_counts)) if face_counts else 0
-
-    if median_faces >= 2:
-        filter_chain = "split[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:10[bg_blur];[fg]scale=1080:-1[fg_scale];[bg_blur][fg_scale]overlay=0:(H-h)/2"
-        return filter_chain, "Blurred Widescreen (Multi-Speaker)"
+    elif mode == "Trio":
+        return (
+            "split=3[p1][p2][p3];"
+            "[p1]crop=iw/3:ih:0:0,scale=1080:640[v1];"
+            "[p2]crop=iw/3:ih:iw/3:0,scale=1080:640[v2];"
+            "[p3]crop=iw/3:ih:(iw/3)*2:0,scale=1080:640[v3];"
+            "[v1][v2][v3]vstack=inputs=3"
+        )
         
-    elif median_faces == 1 and detected_x_centers:
-        median_x = float(np.median(detected_x_centers))
-        filtered_centers = [x for x in detected_x_centers if abs(x - median_x) < (width * 0.25)]
-        final_x = int(np.mean(filtered_centers)) if filtered_centers else int(median_x)
+    elif mode == "Spotlight":
+        return "split[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:10[bg_blur];[fg]scale=1080:-1[fg_scale];[bg_blur][fg_scale]overlay=0:(H-h)/2"
         
-        crop_x = max(0, min(int(final_x - (crop_w // 2)), width - crop_w))
-        filter_chain = f"crop={crop_w}:{height}:{crop_x}:0,scale=1080:1920"
-        return filter_chain, "Face-Tracked Solo Crop"
+    elif mode == "Centered":
+        return "crop=ih*(9/16):ih:(iw-crop_w)/2:0,scale=1080:1920"
         
-    else:
-        default_x = (width - crop_w) // 2
-        filter_chain = f"crop={crop_w}:{height}:{default_x}:0,scale=1080:1920"
-        return filter_chain, "Center Crop"
+    elif mode == "Horizontal":
+        return "split[bg][fg];[bg]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=25:10[b_blur];[fg]scale=1080:-1[f_scale];[b_blur][f_scale]overlay=0:(H-h)/2"
+        
+    return "crop=ih*(9/16):ih,scale=1080:1920"
 
-def get_input_videos():
-    extensions = (".mp4", ".mov", ".mkv", ".avi", ".webm")
-    if os.path.exists(INPUT_DIR):
-        files = [f for f in os.listdir(INPUT_DIR) if f.lower().endswith(extensions)]
-        return sorted(files) if files else ["No videos found in inputs/ folder"]
-    return ["No videos found in inputs/ folder"]
+def generate_frame_preview(video_path, timestamp_s, filter_str):
+    preview_path = os.path.join(PREVIEW_DIR, "preview_frame.jpg")
+    cmd = [
+        "ffmpeg", "-y", "-ss", str(timestamp_s), "-i", video_path,
+        "-vf", filter_str, "-vframes", "1", "-q:v", "2", preview_path
+    ]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return preview_path if os.path.exists(preview_path) else None
 
-# --- STEP 1: GEMINI LLM & WHISPER DETECTION ---
-def step1_detect(selected_file, language_mode, num_clips, clip_duration, api_key, progress=gr.Progress()):
-    if not selected_file or selected_file == "No videos found in inputs/ folder":
-        return None, None, "❌ Please place a video inside the 'inputs/' folder."
+# ==========================================
+# SCREEN 1: UPLOAD YOUR VIDEO
+# ==========================================
+if st.session_state.current_step == "upload":
+    st.markdown("<h1 style='text-align: center;'>Upload your video</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #888;'>AI will detect the best moments for clipping</p>", unsafe_allow_html=True)
     
-    input_path = os.path.join(INPUT_DIR, selected_file)
-    if not os.path.exists(input_path):
-        return None, None, f"❌ Error: File '{input_path}' not found."
+    col_a, col_b, col_c = st.columns([1, 2, 1])
+    with col_b:
+        uploaded_file = st.file_uploader("Click or drag to upload a video", type=["mp4", "mov", "webm", "mkv"])
+        
+        existing_files = [f for f in os.listdir(INPUT_DIR) if f.endswith((".mp4", ".mov", ".mkv", ".webm"))]
+        if existing_files:
+            st.markdown("---")
+            st.subheader("Or select an existing workspace video:")
+            selected_existing = st.selectbox("Your Videos", existing_files)
+            if st.button("🚀 Process Selected Video", type="primary", use_container_width=True):
+                st.session_state.active_video = selected_existing
+                st.session_state.current_step = "dashboard"
+                st.rerun()
 
-    progress(0.2, desc=f"🎙️ Transcribing audio ({language_mode})...")
+        if uploaded_file is not None:
+            save_path = os.path.join(INPUT_DIR, uploaded_file.name)
+            with open(save_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+            st.session_state.active_video = uploaded_file.name
+            st.session_state.current_step = "dashboard"
+            st.rerun()
+
+# ==========================================
+# SCREEN 2 & 3: AI CLIP DASHBOARD
+# ==========================================
+elif st.session_state.current_step == "dashboard":
+    top_col1, top_col2 = st.columns([1, 8])
+    with top_col1:
+        if st.button("← Back"):
+            st.session_state.current_step = "upload"
+            st.rerun()
+    with top_col2:
+        st.subheader(f"Project: {st.session_state.active_video}")
+
+    video_path = os.path.join(INPUT_DIR, st.session_state.active_video)
     
-    lang_code = "hi" if "Hindi" in language_mode else "en" if "English" in language_mode else None
-    segments, _ = whisper_model.transcribe(input_path, language=lang_code, word_timestamps=True)
+    col_left, col_right = st.columns([3, 2], gap="medium")
     
-    all_words = []
-    transcript_lines = []
-    for segment in segments:
-        for w in segment.words:
-            all_words.append({"word": w.word, "start": w.start, "end": w.end})
-        transcript_lines.append(f"[{segment.start:.1f}s - {segment.end:.1f}s] {segment.text.strip()}")
-            
-    if not all_words:
-        return None, None, "❌ No speech detected in video!"
-
-    total_duration = all_words[-1]["end"]
-    clip_duration = float(clip_duration)
-    num_clips = int(num_clips)
-    
-    selected_windows = []
-    table_rows = []
-
-    # --- GEMINI AI PATH ---
-    # Automatically grab the key from the UI text box OR the background environment variable
-    active_key = api_key.strip() if api_key and api_key.strip() else os.environ.get("GEMINI_API_KEY")
-
-    if active_key:
-        progress(0.6, desc="🧠 Sending transcript to Google Gemini for contextual analysis...")
-        try:
-            # Initialize the client with the active key
-            client = genai.Client(api_key=active_key)
-            
-            transcript_text = "\n".join(transcript_lines)
-            prompt = f"""
-            You are an expert short-form video editor. Read this video transcript and find the {num_clips} most viral, highly-engaging clips. 
-            Look for strong hooks, information gaps, emotional moments, or powerful advice.
-            Each clip should be around {clip_duration} seconds long.
-            
-            Return ONLY a valid JSON array of objects. Do not use markdown backticks.
-            Format exactly like this:
-            [
-                {{"start": 12.0, "end": 37.0, "preview": "The shocking truth about..."}}
-            ]
-            
-            Transcript:
-            {transcript_text}
-            """
-            
-            response = client.models.generate_content(
-                model='gemini-1.5-flash-001', # Updated Model Name
-                contents=prompt
-            )
-            
-            clean_json = re.sub(r'```json\n|\n```|```', '', response.text).strip()
-            ai_clips = json.loads(clean_json)
-            
-            for i, clip in enumerate(ai_clips):
-                start_t = float(clip["start"])
-                end_t = float(clip["end"])
-                reason = clip.get("preview", "AI Selected Hook")
-                selected_windows.append({"start": start_t, "end": end_t})
-                table_rows.append([f"Clip {i+1} (AI)", round(start_t, 1), round(end_t, 1), reason])
+    with col_left:
+        st.video(video_path)
+        
+    with col_right:
+        st.markdown("### ✦ Find a moment")
+        prompt_input = st.text_input("Describe what you're looking for or hit Auto-Scan", placeholder='"the funniest part", "when they get emotional"...')
+        
+        if st.button("⚡ Generate AI Clips", type="primary", use_container_width=True):
+            with st.spinner("Transcribing and searching story arcs..."):
+                lang_code = "en"
+                segments, _ = whisper_model.transcribe(video_path, word_timestamps=True)
                 
-            progress(1.0, desc="✅ Gemini successfully found the best story beats!")
-            return table_rows, selected_windows, f"✅ Step 1 Complete! Gemini extracted {len(selected_windows)} contextual clips."
+                transcript_lines = []
+                all_words = []
+                for s in segments:
+                    for w in s.words:
+                        all_words.append({"word": w.word, "start": w.start, "end": w.end})
+                    transcript_lines.append(f"[{s.start:.1f}s - {s.end:.1f}s] {s.text.strip()}")
+                
+                active_key = os.environ.get("GEMINI_API_KEY")
+                
+                if active_key:
+                    try:
+                        client = genai.Client(api_key=active_key)
+                        prompt = f"""
+                        Read this transcript and find the 4 most engaging short clips.
+                        Return ONLY a valid JSON array:
+                        [
+                            {{"title": "Why surfing is the ultimate metaphor", "start": 12.0, "end": 36.0}}
+                        ]
+                        Transcript:
+                        {"\n".join(transcript_lines)}
+                        """
+                        res = client.models.generate_content(model='gemini-1.5-flash-001', contents=prompt)
+                        clean_json = re.sub(r'```json\n|\n```|```', '', res.text).strip()
+                        st.session_state.detected_clips = json.loads(clean_json)
+                    except Exception as e:
+                        st.error(f"API Error: {e}")
+                
+                if not st.session_state.detected_clips and all_words:
+                    total_dur = all_words[-1]["end"]
+                    st.session_state.detected_clips = [
+                        {"title": f"Viral Hook Segment #{i+1}", "start": float(i*30), "end": float(i*30 + 25)}
+                        for i in range(min(4, int(total_dur // 30)))
+                    ]
+        
+        if st.session_state.detected_clips:
+            st.markdown(f"#### Clips ({len(st.session_state.detected_clips)})")
             
-        except Exception as e:
-            print(f"Gemini API Error: {e}")
-            progress(0.8, desc="⚠️ API Error! Falling back to Speech Density Engine...")
-
-    # --- FALLBACK: DENSITY PATH ---
-    if not selected_windows:
-        progress(0.6, desc="🧠 Scanning for speech density hooks (No API Key active)...")
-        step = 5.0 
-        candidates = []
-        for start_t in range(0, int(max(0, total_duration - clip_duration)), int(step)):
-            end_t = start_t + clip_duration
-            word_count = sum(1 for w in all_words if w["start"] >= start_t and w["end"] <= end_t)
-            candidates.append({"start": start_t, "end": end_t, "score": word_count})
-            
-        candidates.sort(key=lambda x: x["score"], reverse=True)
-        for cand in candidates:
-            overlap = any(max(cand["start"], sel["start"]) < min(cand["end"], sel["end"]) for sel in selected_windows)
-            if not overlap:
-                selected_windows.append(cand)
-                if len(selected_windows) == num_clips:
-                    break
+            for idx, clip in enumerate(st.session_state.detected_clips):
+                with st.container(border=True):
+                    st.markdown(f"**{idx+1}. {clip['title']}**")
+                    st.caption(f"⏱️ {int(clip['start'])}s → {int(clip['end'])}s ({int(clip['end'] - clip['start'])}s)")
                     
-        selected_windows.sort(key=lambda x: x["start"])
-        
-        for i, win in enumerate(selected_windows):
-            clip_words = [w["word"].strip() for w in all_words if w["start"] >= win["start"] and w["end"] <= win["end"]]
-            snippet = " ".join(clip_words[:12]) + "..." if clip_words else "No spoken text detected"
-            table_rows.append([f"Clip {i+1} (Density)", round(win["start"], 1), round(win["end"], 1), snippet])
-                    
-        progress(1.0, desc="✅ Density Hooks Extracted!")
-        return table_rows, selected_windows, f"✅ Step 1 Complete! Extracted {len(selected_windows)} density clips."
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("Clip Horizontal 📺", key=f"horiz_{idx}"):
+                            st.session_state.selected_clip_idx = idx
+                            st.session_state.framing_mode = "Horizontal"
+                            st.session_state.current_step = "editor"
+                            st.rerun()
+                    with c2:
+                        if st.button("Clip Vertical 📱", key=f"vert_{idx}", type="primary"):
+                            st.session_state.selected_clip_idx = idx
+                            st.session_state.framing_mode = "Vertical"
+                            st.session_state.current_step = "editor"
+                            st.rerun()
 
-# --- STEP 2: RENDERING ENGINE ---
-def step2_render_clips(selected_file, selected_windows, auto_clean, progress=gr.Progress()):
-    if not selected_windows:
-        return None, "❌ Please run Step 1 (Detect Hooks) before rendering!"
-    
-    if auto_clean:
-        clear_output_folder()
-        
-    input_path = os.path.join(INPUT_DIR, selected_file)
-    generated_videos = []
-    render_summary = []
-    
-    for i, win in enumerate(selected_windows):
-        progress(0.1 + (0.8 * (i / len(selected_windows))), desc=f"🎬 Auto-Directing & rendering Clip {i+1} of {len(selected_windows)}...")
-        
-        start_t = win["start"]
-        end_t = win["end"]
-        clip_duration_real = end_t - start_t
-        
-        filter_chain, decision_label = get_auto_framing_filter(input_path, start_t, end_t)
-        
-        base_name = os.path.splitext(selected_file)[0]
-        output_filename = f"viral_v5.2_{base_name}_clip{i+1}.mp4"
-        output_path = os.path.join(OUTPUT_DIR, output_filename)
-        
-        command = [
-            "ffmpeg", "-y", "-ss", str(start_t), "-i", input_path, "-t", str(clip_duration_real),
-            "-vf", filter_chain, "-c:v", "libx264", "-preset", "fast", "-c:a", "aac", output_path
-        ]
-        
-        subprocess.run(command)
-        
-        caption_text = f"Clip {i+1}: {int(start_t)}s - {int(end_t)}s ({decision_label})"
-        generated_videos.append((output_path, caption_text))
-        render_summary.append(f"⚡ {caption_text}")
-        
-    progress(1.0, desc="🚀 All Shorts Rendered Successfully!")
-    return generated_videos, "\n".join(render_summary)
+# ==========================================
+# SCREEN 4: POSITION THE CROP (FRAMING STUDIO)
+# ==========================================
+elif st.session_state.current_step == "editor":
+    top_col1, top_col2 = st.columns([1, 8])
+    with top_col1:
+        if st.button("← Back"):
+            st.session_state.current_step = "dashboard"
+            st.rerun()
+    with top_col2:
+        st.subheader("Position the Crop")
 
-def refresh_file_list():
-    files = get_input_videos()
-    return gr.Dropdown(choices=files, value=files[0] if files else None)
+    clip = st.session_state.detected_clips[st.session_state.selected_clip_idx]
+    video_path = os.path.join(INPUT_DIR, st.session_state.active_video)
+    
+    st.markdown("### Framing Strategy")
+    preset_cols = st.columns(6)
+    modes = ["Vertical", "Split", "Trio", "Spotlight", "Centered", "Horizontal"]
+    
+    for i, m in enumerate(modes):
+        with preset_cols[i]:
+            btn_type = "primary" if st.session_state.framing_mode == m else "secondary"
+            if st.button(m, key=f"mode_{m}", type=btn_type, use_container_width=True):
+                st.session_state.framing_mode = m
+                st.rerun()
 
-custom_css = """
-.stat-box { background: #1e1e2e; border: 2px solid #313244; border-radius: 8px; padding: 12px; text-align: center; margin-bottom: 10px; }
-.stat-title { color: #cdd6f4; font-size: 14px; font-weight: bold; }
-.stat-desc { color: #a6adc8; font-size: 12px; }
-"""
+    col_edit, col_prev = st.columns([3, 2], gap="large")
+    
+    with col_edit:
+        st.markdown("#### Adjust Camera Position")
+        st.session_state.crop_x_percent = st.slider(
+            "Horizontal Position (X-Axis)",
+            min_value=0, max_value=100, value=st.session_state.crop_x_percent,
+            help="Drag to move the 9:16 framing box across the source video."
+        )
+        
+        filter_str = build_layout_ffmpeg_filter(st.session_state.framing_mode, st.session_state.crop_x_percent)
+        
+        st.markdown("---")
+        if st.button("⚡ Render Final Short", type="primary", use_container_width=True):
+            out_name = f"clipzi_{st.session_state.framing_mode}_{st.session_state.selected_clip_idx+1}.mp4"
+            out_path = os.path.join(OUTPUT_DIR, out_name)
+            
+            with st.spinner("Rendering short with selected layout..."):
+                cmd = [
+                    "ffmpeg", "-y", "-ss", str(clip['start']), "-i", video_path,
+                    "-t", str(clip['end'] - clip['start']),
+                    "-vf", filter_str, "-c:v", "libx264", "-preset", "fast", "-c:a", "aac", out_path
+                ]
+                subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                st.success(f"Rendered! Saved to {out_path}")
+                st.video(out_path)
 
-with gr.Blocks(title="AI Short Video Clipper v5.2", css=custom_css) as demo:
-    clip_windows_state = gr.State()
-    
-    gr.Markdown("# 🎬 AI Video Clipper v5.2: LLM Context Engine + Auto-Director")
-    
-    with gr.Row():
-        with gr.Column(scale=1):
-            gr.Markdown("### 🎙️ Step 1: LLM Context Analysis")
-            with gr.Row():
-                workspace_dropdown = gr.Dropdown(choices=get_input_videos(), label="Select Source Video", value=get_input_videos()[0] if get_input_videos() else None, scale=4)
-                refresh_btn = gr.Button("🔄", scale=1)
-            
-            api_key_input = gr.Textbox(label="🔑 Google Gemini API Key (Optional)", type="password", placeholder="Leave blank to use environment variable.", info="Leave blank to automatically use your saved system key.")
-            
-            with gr.Row():
-                language_selector = gr.Dropdown(choices=["English", "Hindi", "Auto-Detect"], value="English", label="Audio Language")
-                num_clips_input = gr.Slider(minimum=1, maximum=20, value=5, step=1, label="Number of Clips")
-            
-            clip_duration_input = gr.Slider(minimum=15, maximum=60, value=25, step=5, label="Target Duration (seconds)")
-            
-            step1_btn = gr.Button("🧠 Step 1: AI Story Scan & Extract Timestamps", variant="primary")
-            status_box = gr.Textbox(label="System Status", value="⏳ Ready.", interactive=False, lines=2)
-            
-            stop_btn = gr.Button("🛑 Stop Active Process", variant="stop")
-            
-            gr.Markdown("---")
-            gr.Markdown("### 🎬 Step 2: Auto-Direct & Render")
-            gr.HTML('<div class="stat-box"><div class="stat-title">🤖 AI Auto-Director Active</div><div class="stat-desc">Automatically selects Face-Tracking or Widescreen based on person count!</div></div>')
-            
-            auto_clean_checkbox = gr.Checkbox(value=True, label="Auto-clear outputs folder before new render")
-            step2_btn = gr.Button("⚡ Step 2: Auto-Frame & Render Shorts", variant="primary")
-            
-        with gr.Column(scale=2):
-            gr.Markdown("### 📋 AI Selected Hooks Overview")
-            hooks_table = gr.Dataframe(
-                headers=["Clip Label", "Start (s)", "End (s)", "AI Reason / Preview"],
-                datatype=["str", "number", "number", "str"],
-                type="array",
-                interactive=False,
-                row_count=(5, "dynamic"),
-                col_count=(4, "fixed")
-            )
-            
-            gr.Markdown("### 📺 Rendered Gallery")
-            video_gallery = gr.Gallery(label="Generated 9:16 Shorts", show_label=True, columns=3, rows=2, object_fit="contain", height=500)
-
-    # Event Listeners
-    refresh_btn.click(fn=refresh_file_list, outputs=[workspace_dropdown])
-    
-    step1_event = step1_btn.click(
-        fn=step1_detect,
-        inputs=[workspace_dropdown, language_selector, num_clips_input, clip_duration_input, api_key_input],
-        outputs=[hooks_table, clip_windows_state, status_box]
-    )
-    
-    step2_event = step2_btn.click(
-        fn=step2_render_clips,
-        inputs=[workspace_dropdown, clip_windows_state, auto_clean_checkbox],
-        outputs=[video_gallery, status_box]
-    )
-    
-    stop_btn.click(
-        fn=lambda: "🛑 Process stopped by user!",
-        inputs=None,
-        outputs=[status_box],
-        cancels=[step1_event, step2_event]
-    )
-
-if __name__ == "__main__":
-    demo.launch(server_name="0.0.0.0", server_port=7860, share=True)
+    with col_prev:
+        st.markdown("#### Live Preview (9:16)")
+        filter_str = build_layout_ffmpeg_filter(st.session_state.framing_mode, st.session_state.crop_x_percent)
+        mid_point = (clip['start'] + clip['end']) / 2.0
+        
+        preview_img = generate_frame_preview(video_path, mid_point, filter_str)
+        if preview_img:
+            st.image(preview_img, caption=f"Mode: {st.session_state.framing_mode}", use_container_width=True)

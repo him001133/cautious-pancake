@@ -1,4 +1,4 @@
-# cautious-pancake# 🎬 AI Short Video Clipper v5.2
+# cautious-pancake# 🎬 # 🎬 AutoDirector AI
 
 An automated Python and Gradio-based video editing pipeline that transforms long-form videos and podcasts into highly engaging 9:16 vertical shorts. 
 
