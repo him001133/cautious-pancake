@@ -22,8 +22,16 @@ st.markdown("""
     
     /* Sticky Footer */
     .custom-footer { position: fixed; bottom: 0; left: 0; width: 100%; background-color: #0e1117; padding: 12px 0; text-align: center; border-top: 1px solid #2e303e; color: #6b7280; font-size: 0.85rem; z-index: 99999; }
+    .custom-footer a { color: #a3a8b8; text-decoration: none; margin: 0 8px; transition: 0.2s; }
+    .custom-footer a:hover { color: #ff4b4b; }
     </style>
-    <div class="custom-footer">&copy; 2026 AutoDirector AI Studio. All rights reserved.</div>
+    <div class="custom-footer">
+        &copy; 2026 AutoDirector AI Studio. All rights reserved.  
+        <span style="opacity: 0.3; margin: 0 5px;">|</span>
+        <a href="privacy" target="_self">Privacy Policy</a>
+        <span style="opacity: 0.3; margin: 0 5px;">|</span>
+        <a href="terms" target="_self">Terms & Conditions</a>
+    </div>
 """, unsafe_allow_html=True)
 
 # Session State Initialization
@@ -235,14 +243,12 @@ elif st.session_state.current_step == "dashboard":
         if st.button("⚡ Generate AI Clips", type="primary", use_container_width=True):
             with st.spinner("Extracting audio and transcribing... (This may take a minute)"):
                 try:
-                    # SAFTEY MEASURE: Extract lightweight audio file to prevent RAM crashes
                     audio_path = os.path.join(INPUT_DIR, "temp_audio.wav")
                     subprocess.run(
                         ["ffmpeg", "-y", "-i", video_path, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audio_path], 
                         check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                     )
 
-                    # Pass the tiny audio file to Whisper instead of the heavy video file
                     segments, _ = whisper_model.transcribe(audio_path, word_timestamps=True)
                     transcript_lines = []
                     all_words = []
