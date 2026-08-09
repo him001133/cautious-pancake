@@ -43,23 +43,31 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-# --- CUSTOM HEADER WITH POPOVER LOGIN ---
+# The new Modal window function
+@st.dialog("Sign In to Workspace")
+def login_modal():
+    st.markdown("Use your demo credentials to access the studio:")
+    authenticator.login(location='main')
+    # Force a UI sync if login is successful
+    if st.session_state.get("authentication_status"):
+        st.rerun()
+
+# --- CUSTOM HEADER ---
 nav_c1, nav_c2, nav_c3, nav_c4, nav_c5 = st.columns([5, 1.2, 1, 1, 1.5], vertical_alignment="center")
 with nav_c1: st.markdown("<h3 style='margin: 0;'>🎬 AutoDirector AI</h3>", unsafe_allow_html=True)
 with nav_c2: st.page_link("app.py", label="Dashboard", icon="🏠")
 with nav_c3: st.page_link("pages/pricing.py", label="Pricing", icon="💳")
 with nav_c4: st.page_link("pages/support.py", label="Support", icon="🎧")
 with nav_c5:
-    # Check status directly for the header rendering
     if st.session_state.get("authentication_status"):
         authenticator.logout("Logout", "main")
     else:
-        # This function handles the actual login logic when the button is clicked
-        with st.popover("Login 🔒", use_container_width=True):
-            authenticator.login(location='main')
+        # Opens the modal when clicked
+        if st.button("Login 🔒", use_container_width=True):
+            login_modal()
 st.markdown("---")
 
-# FETCH SESSION STATE HERE (After the login form has had a chance to process the input!)
+# FETCH SESSION STATE
 authentication_status = st.session_state.get("authentication_status")
 name = st.session_state.get("name")
 
@@ -159,6 +167,9 @@ if st.session_state.current_step == "upload":
             else:
                 st.markdown("<h3 style='text-align: center; margin-bottom: 10px;'>🔒 Sign in to start clipping</h3>", unsafe_allow_html=True)
                 st.info("Click the **Login** button in the top navigation bar to access the AutoDirector Studio. \n\n**(Demo Username: `creator` | Password: `password123`)**")
+                # Added a secondary button right in the main block for convenience
+                if st.button("Open Login Window", type="primary", use_container_width=True):
+                    login_modal()
 
     st.markdown("<br><br><br><h2 style='text-align: center;'>How It Works</h2><hr style='border-color: #2e303e;'>", unsafe_allow_html=True)
     s1, s2, s3 = st.columns(3)
