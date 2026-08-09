@@ -4,6 +4,7 @@ import json
 import subprocess
 import numpy as np
 import streamlit as st
+import yt_dlp
 from faster_whisper import WhisperModel
 from google import genai
 from google.genai import types
@@ -100,23 +101,55 @@ if st.session_state.current_step == "upload":
     col_space1, col_main, col_space2 = st.columns([1, 2, 1])
     with col_main:
         with st.container(border=True):
-            st.markdown("<h3 style='text-align: center; margin-bottom: 0;'>📥 Upload to Workspace</h3>", unsafe_allow_html=True)
-            uploaded_file = st.file_uploader("Upload a new video", type=["mp4", "mov", "webm", "mkv"], label_visibility="collapsed")
+            st.markdown("<h3 style='text-align: center; margin-bottom: 15px;'>📥 Add Video to Workspace</h3>", unsafe_allow_html=True)
             
-            if uploaded_file is not None:
-                save_path = os.path.join(INPUT_DIR, uploaded_file.name)
-                with open(save_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                st.session_state.active_video = uploaded_file.name
-                st.session_state.current_step = "dashboard"
-                st.rerun()
-                
+            # --- NEW TABBED INTERFACE ---
+            tab_upload, tab_youtube = st.tabs(["📁 Upload File", "🔗 YouTube Link"])
+            
+            with tab_upload:
+                uploaded_file = st.file_uploader("Upload a new video", type=["mp4", "mov", "webm", "mkv"], label_visibility="collapsed")
+                if uploaded_file is not None:
+                    save_path = os.path.join(INPUT_DIR, uploaded_file.name)
+                    with open(save_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    st.session_state.active_video = uploaded_file.name
+                    st.session_state.current_step = "dashboard"
+                    st.rerun()
+            
+            with tab_youtube:
+                st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                yt_url = st.text_input("Paste YouTube URL here", placeholder="https://www.youtube.com/watch?v=...")
+                if st.button("📥 Download & Process", type="primary", use_container_width=True):
+                    if yt_url:
+                        with st.spinner("Downloading high-quality video from YouTube... This may take a minute."):
+                            try:
+                                # Configure yt-dlp to grab MP4 format (cap at 1080p to save server memory)
+                                ydl_opts = {
+                                    'format': 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best',
+                                    'outtmpl': os.path.join(INPUT_DIR, '%(id)s.%(ext)s'),
+                                    'noplaylist': True,
+                                    'quiet': True,
+                                    'merge_output_format': 'mp4'
+                                }
+                                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                                    info_dict = ydl.extract_info(yt_url, download=True)
+                                    filename = f"{info_dict['id']}.mp4" 
+                                    
+                                st.session_state.active_video = filename
+                                st.session_state.current_step = "dashboard"
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to download video. Ensure the link is valid and public. Error: {e}")
+                    else:
+                        st.warning("Please paste a valid YouTube link first.")
+            # --------------------------------
+            
             existing_files = [f for f in os.listdir(INPUT_DIR) if f.endswith((".mp4", ".mov", ".mkv", ".webm"))]
             if existing_files:
                 st.markdown("<div style='text-align: center; margin: 15px 0; color: #6b7280; font-size: 0.9rem;'>— or open a recent project —</div>", unsafe_allow_html=True)
                 with st.container(border=True):
                     selected_existing = st.selectbox("Your Videos", existing_files, label_visibility="collapsed")
-                    if st.button("🚀 Process Selected Video", type="primary", use_container_width=True):
+                    if st.button("🚀 Process Selected Video", use_container_width=True):
                         st.session_state.active_video = selected_existing
                         st.session_state.current_step = "dashboard"
                         st.rerun()
