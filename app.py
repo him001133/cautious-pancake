@@ -25,17 +25,7 @@ st.markdown("""
     <div class="custom-footer">&copy; 2026 AutoDirector AI Studio. All rights reserved.</div>
 """, unsafe_allow_html=True)
 
-# Native Streamlit Navigation
-nav_c1, nav_c2, nav_c3, nav_c4 = st.columns([6, 1, 1, 1], vertical_alignment="center")
-with nav_c1: st.markdown("<h3 style='margin: 0;'>🎬 AutoDirector AI</h3>", unsafe_allow_html=True)
-with nav_c2: st.page_link("app.py", label="Dashboard", icon="🏠")
-with nav_c3: st.page_link("pages/pricing.py", label="Pricing", icon="💳")
-with nav_c4: st.page_link("pages/support.py", label="Support", icon="🎧")
-st.markdown("---")
-# ----------------------------------
-
 # --- AUTHENTICATION SETUP ---
-# Pre-configured demo user. The password is "password123" (hashed using bcrypt)
 credentials = {
     "usernames": {
         "creator": {
@@ -53,16 +43,35 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-# Render the login widget in the sidebar
-authenticator.login(location='sidebar')
-
-# Fetch the status directly from the session state
+# Fetch session state before rendering header
 authentication_status = st.session_state.get("authentication_status")
 name = st.session_state.get("name")
 
+# --- CUSTOM HEADER WITH POPOVER LOGIN ---
+nav_c1, nav_c2, nav_c3, nav_c4, nav_c5 = st.columns([5, 1.2, 1, 1, 1.5], vertical_alignment="center")
+with nav_c1: st.markdown("<h3 style='margin: 0;'>🎬 AutoDirector AI</h3>", unsafe_allow_html=True)
+with nav_c2: st.page_link("app.py", label="Dashboard", icon="🏠")
+with nav_c3: st.page_link("pages/pricing.py", label="Pricing", icon="💳")
+with nav_c4: st.page_link("pages/support.py", label="Support", icon="🎧")
+with nav_c5:
+    if authentication_status:
+        authenticator.logout("Logout", "main")
+    else:
+        # Creates a clickable dropdown button for the login form
+        with st.popover("Login 🔒", use_container_width=True):
+            authenticator.login(location='main')
+st.markdown("---")
+
+# --- SIDEBAR LOGIC ---
 if authentication_status:
-    authenticator.logout("Logout", "sidebar")
     st.sidebar.success(f"Welcome back, {name}!")
+    st.sidebar.markdown("---")
+    if st.sidebar.button("➕ Edit New Video", type="primary", use_container_width=True):
+        st.session_state.current_step = "upload"
+        st.session_state.active_video = None
+        st.session_state.detected_clips = []
+        st.session_state.selected_clip_idx = 0
+        st.rerun()
 elif authentication_status is False:
     st.sidebar.error("Username/password is incorrect")
 # ----------------------------------
@@ -126,7 +135,6 @@ if st.session_state.current_step == "upload":
     with col_main:
         with st.container(border=True):
             if authentication_status:
-                # USER IS LOGGED IN -> Show actual app functions
                 st.markdown("<h3 style='text-align: center; margin-bottom: 0;'>📥 Upload to Workspace</h3>", unsafe_allow_html=True)
                 uploaded_file = st.file_uploader("Upload a new video", type=["mp4", "mov", "webm", "mkv"], label_visibility="collapsed")
                 
@@ -148,11 +156,9 @@ if st.session_state.current_step == "upload":
                             st.session_state.current_step = "dashboard"
                             st.rerun()
             else:
-                # USER IS GUEST -> Show locked message
                 st.markdown("<h3 style='text-align: center; margin-bottom: 10px;'>🔒 Sign in to start clipping</h3>", unsafe_allow_html=True)
-                st.info("Use the login menu in the left sidebar to access the AutoDirector Studio. \n\n**(Demo Username: `creator` | Password: `password123`)**")
+                st.info("Click the **Login** button in the top navigation bar to access the AutoDirector Studio. \n\n**(Demo Username: `creator` | Password: `password123`)**")
 
-    # Marketing Sections remain visible to everyone
     st.markdown("<br><br><br><h2 style='text-align: center;'>How It Works</h2><hr style='border-color: #2e303e;'>", unsafe_allow_html=True)
     s1, s2, s3 = st.columns(3)
     with s1: st.markdown("### 1️⃣ Upload\nDrop in your long-form MP4. We support podcasts, interviews, and gaming VODs up to 800MB directly in the browser.")
