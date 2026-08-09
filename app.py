@@ -43,14 +43,17 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-# The new Modal window function
-@st.dialog("Sign In to Workspace")
-def login_modal():
-    st.markdown("Use your demo credentials to access the studio:")
-    authenticator.login(location='main')
-    # Force a UI sync if login is successful
-    if st.session_state.get("authentication_status"):
-        st.rerun()
+# FETCH SESSION STATE
+authentication_status = st.session_state.get("authentication_status")
+name = st.session_state.get("name")
+
+# Session State Initialization
+if "current_step" not in st.session_state: st.session_state.current_step = "upload"
+if "active_video" not in st.session_state: st.session_state.active_video = None
+if "detected_clips" not in st.session_state: st.session_state.detected_clips = []
+if "selected_clip_idx" not in st.session_state: st.session_state.selected_clip_idx = 0
+if "framing_mode" not in st.session_state: st.session_state.framing_mode = "Vertical"
+if "crop_x_percent" not in st.session_state: st.session_state.crop_x_percent = 50
 
 # --- CUSTOM HEADER ---
 nav_c1, nav_c2, nav_c3, nav_c4, nav_c5 = st.columns([5, 1.2, 1, 1, 1.5], vertical_alignment="center")
@@ -59,17 +62,15 @@ with nav_c2: st.page_link("app.py", label="Dashboard", icon="🏠")
 with nav_c3: st.page_link("pages/pricing.py", label="Pricing", icon="💳")
 with nav_c4: st.page_link("pages/support.py", label="Support", icon="🎧")
 with nav_c5:
-    if st.session_state.get("authentication_status"):
+    if authentication_status:
         authenticator.logout("Logout", "main")
     else:
-        # Opens the modal when clicked
+        # If logged out, this header button just makes sure they are on the home page where the form is
         if st.button("Login 🔒", use_container_width=True):
-            login_modal()
+            st.session_state.current_step = "upload"
+            st.rerun()
 st.markdown("---")
 
-# FETCH SESSION STATE
-authentication_status = st.session_state.get("authentication_status")
-name = st.session_state.get("name")
 
 # --- SIDEBAR LOGIC ---
 if authentication_status:
@@ -98,14 +99,6 @@ def load_whisper_model():
     return WhisperModel("tiny", device="cpu", compute_type="int8", cpu_threads=4, num_workers=2)
 
 whisper_model = load_whisper_model()
-
-# Session State Initialization
-if "current_step" not in st.session_state: st.session_state.current_step = "upload"
-if "active_video" not in st.session_state: st.session_state.active_video = None
-if "detected_clips" not in st.session_state: st.session_state.detected_clips = []
-if "selected_clip_idx" not in st.session_state: st.session_state.selected_clip_idx = 0
-if "framing_mode" not in st.session_state: st.session_state.framing_mode = "Vertical"
-if "crop_x_percent" not in st.session_state: st.session_state.crop_x_percent = 50
 
 def build_layout_ffmpeg_filter(mode, crop_x_pct=50):
     x_factor = crop_x_pct / 100.0
@@ -165,11 +158,10 @@ if st.session_state.current_step == "upload":
                             st.session_state.current_step = "dashboard"
                             st.rerun()
             else:
-                st.markdown("<h3 style='text-align: center; margin-bottom: 10px;'>🔒 Sign in to start clipping</h3>", unsafe_allow_html=True)
-                st.info("Click the **Login** button in the top navigation bar to access the AutoDirector Studio. \n\n**(Demo Username: `creator` | Password: `password123`)**")
-                # Added a secondary button right in the main block for convenience
-                if st.button("Open Login Window", type="primary", use_container_width=True):
-                    login_modal()
+                # The form now lives permanently on the main page where it won't vanish!
+                st.markdown("<h3 style='text-align: center; margin-bottom: 10px;'>🔒 Workspace Access</h3>", unsafe_allow_html=True)
+                st.info("**(Demo Username: `creator` | Password: `password123`)**")
+                authenticator.login(location='main')
 
     st.markdown("<br><br><br><h2 style='text-align: center;'>How It Works</h2><hr style='border-color: #2e303e;'>", unsafe_allow_html=True)
     s1, s2, s3 = st.columns(3)
