@@ -11,6 +11,79 @@ from google.genai import types
 # Page Configuration
 st.set_page_config(page_title="AutoDirector AI", page_icon="🎬", layout="wide")
 
+# --- CUSTOM UI: HEADER & FOOTER ---
+st.markdown("""
+    <style>
+    /* Fixed Top Header */
+    .custom-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        background-color: #0e1117;
+        padding: 15px 40px;
+        z-index: 99999;
+        border-bottom: 1px solid #2e303e;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .header-logo {
+        font-size: 1.4rem;
+        font-weight: 800;
+        color: white;
+        text-decoration: none;
+        letter-spacing: 0.5px;
+    }
+    .header-links a {
+        color: #a3a8b8;
+        text-decoration: none;
+        margin-left: 25px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        transition: color 0.2s ease;
+    }
+    .header-links a:hover {
+        color: #ff4b4b;
+    }
+    
+    /* Push main content down so header doesn't overlap it */
+    .block-container {
+        padding-top: 90px !important;
+        padding-bottom: 80px !important;
+    }
+    
+    /* Fixed Bottom Footer */
+    .custom-footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        background-color: #0e1117;
+        padding: 12px 0;
+        text-align: center;
+        border-top: 1px solid #2e303e;
+        color: #6b7280;
+        font-size: 0.85rem;
+        z-index: 99999;
+    }
+    </style>
+    
+    <div class="custom-header">
+        <div class="header-logo">🎬 AutoDirector AI</div>
+        <div class="header-links">
+            <a href="#">Dashboard</a>
+            <a href="#">Pricing</a>
+            <a href="#">Support</a>
+        </div>
+    </div>
+    
+    <div class="custom-footer">
+        &copy; 2026 AutoDirector AI Studio. All rights reserved.
+    </div>
+""", unsafe_allow_html=True)
+# ----------------------------------
+
 INPUT_DIR = "inputs"
 OUTPUT_DIR = "outputs"
 PREVIEW_DIR = "previews"
