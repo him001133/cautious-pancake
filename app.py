@@ -218,7 +218,7 @@ elif st.session_state.current_step == "dashboard" and authentication_status:
                         client = genai.Client(api_key=active_key)
                         prompt = f"""Read this transcript and find the 4 most engaging short clips. Return ONLY a valid JSON array: [{{"title": "Why surfing is the ultimate metaphor", "start": 12.0, "end": 36.0}}] \nTranscript:\n{"\n".join(transcript_lines)}"""
                         res = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
-                        clean_json = re.sub(r'```json\n|\n
+                        clean_json = re.sub(r'```json\n|\n```|```', '', res.text).strip()
 cat << 'EOF' > app.py
 import os
 import re
