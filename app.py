@@ -15,13 +15,14 @@ st.set_page_config(page_title="AutoDirector AI", page_icon="🎬", layout="wide"
 # --- CUSTOM UI: HEADER & FOOTER ---
 st.markdown("""
     <style>
+    /* Fixed Top Header */
     .custom-header {
         position: fixed; top: 0; left: 0; width: 100%; background-color: #0e1117;
         padding: 15px 40px; z-index: 99999; border-bottom: 1px solid #2e303e;
         display: flex; justify-content: space-between; align-items: center;
     }
     .header-logo { font-size: 1.4rem; font-weight: 800; color: white; text-decoration: none; }
-    .header-links a { color: #a3a8b8; text-decoration: none; margin-left: 25px; font-weight: 600; font-size: 0.95rem; }
+    .header-links a { color: #a3a8b8; text-decoration: none; margin-left: 25px; font-weight: 600; font-size: 0.95rem; transition: color 0.2s ease; }
     .header-links a:hover { color: #ff4b4b; }
     .block-container { padding-top: 90px !important; padding-bottom: 80px !important; }
     .custom-footer {
@@ -63,7 +64,11 @@ authenticator = stauth.Authenticate(
 )
 
 # Render the login widget in the sidebar
-name, authentication_status, username = authenticator.login(location='sidebar')
+authenticator.login(location='sidebar')
+
+# Fetch the status directly from the session state
+authentication_status = st.session_state.get("authentication_status")
+name = st.session_state.get("name")
 
 if authentication_status:
     authenticator.logout("Logout", "sidebar")
@@ -288,4 +293,4 @@ elif not authentication_status and st.session_state.current_step != "upload":
     st.error("You must be logged in to view this page.")
     if st.button("Return Home"):
         st.session_state.current_step = "upload"
-        st.rerun()   
+        st.rerun()
