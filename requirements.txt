@@ -1,4 +1,5 @@
-faster-whisper==1.0.0
-opencv-python-headless==4.9.0.80
-numpy==1.26.4
-gradio>=4.26.0
+streamlit
+faster-whisper
+google-genai
+numpy
+opencv-python-headless
