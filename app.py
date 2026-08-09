@@ -43,10 +43,6 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-# Fetch session state before rendering header
-authentication_status = st.session_state.get("authentication_status")
-name = st.session_state.get("name")
-
 # --- CUSTOM HEADER WITH POPOVER LOGIN ---
 nav_c1, nav_c2, nav_c3, nav_c4, nav_c5 = st.columns([5, 1.2, 1, 1, 1.5], vertical_alignment="center")
 with nav_c1: st.markdown("<h3 style='margin: 0;'>🎬 AutoDirector AI</h3>", unsafe_allow_html=True)
@@ -54,13 +50,18 @@ with nav_c2: st.page_link("app.py", label="Dashboard", icon="🏠")
 with nav_c3: st.page_link("pages/pricing.py", label="Pricing", icon="💳")
 with nav_c4: st.page_link("pages/support.py", label="Support", icon="🎧")
 with nav_c5:
-    if authentication_status:
+    # Check status directly for the header rendering
+    if st.session_state.get("authentication_status"):
         authenticator.logout("Logout", "main")
     else:
-        # Creates a clickable dropdown button for the login form
+        # This function handles the actual login logic when the button is clicked
         with st.popover("Login 🔒", use_container_width=True):
             authenticator.login(location='main')
 st.markdown("---")
+
+# FETCH SESSION STATE HERE (After the login form has had a chance to process the input!)
+authentication_status = st.session_state.get("authentication_status")
+name = st.session_state.get("name")
 
 # --- SIDEBAR LOGIC ---
 if authentication_status:
