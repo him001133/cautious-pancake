@@ -21,7 +21,7 @@ os.makedirs(PREVIEW_DIR, exist_ok=True)
 
 @st.cache_resource
 def load_whisper_model():
-    # Optimized for GitHub Codespaces CPU speed
+    # Optimized for GitHub Codespaces / Streamlit Cloud CPU speed
     return WhisperModel("tiny", device="cpu", compute_type="int8", cpu_threads=4, num_workers=2)
 
 whisper_model = load_whisper_model()
@@ -85,33 +85,56 @@ def generate_frame_preview(video_path, timestamp_s, filter_str):
     return preview_path if os.path.exists(preview_path) else None
 
 # ==========================================
-# SCREEN 1: UPLOAD YOUR VIDEO
+# SCREEN 1: UPLOAD YOUR VIDEO (UPGRADED UI)
 # ==========================================
 if st.session_state.current_step == "upload":
-    st.markdown("<h1 style='text-align: center;'>Upload your video</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #888;'>AI will detect the best moments for clipping</p>", unsafe_allow_html=True)
+    # 1. Hero Banner
+    st.markdown("""
+        <div style='text-align: center; padding: 2rem 0;'>
+            <h1 style='font-size: 3.5rem; font-weight: 800; margin-bottom: 0;'>🎬 AutoDirector AI</h1>
+            <p style='font-size: 1.2rem; color: #a3a8b8;'>Turn long-form podcasts into viral 9:16 shorts in seconds.</p>
+        </div>
+    """, unsafe_allow_html=True)
     
+    # 2. Features Grid
+    st.markdown("---")
+    f1, f2, f3 = st.columns(3)
+    with f1:
+        st.info("🧠 **AI Story Engine**\n\nAutomatically finds the highest-retention hooks and emotional spikes.")
+    with f2:
+        st.info("🎥 **Smart Framing**\n\nAuto-tracks faces and centers the action for TikTok, Shorts, and Reels.")
+    with f3:
+        st.info("⚡ **Instant Export**\n\nRenders the final MP4s directly in your browser with no watermarks.")
+    st.markdown("---")
+    
+    # 3. Upload & Workspace Cards
+    st.markdown("<br>", unsafe_allow_html=True)
     col_a, col_b, col_c = st.columns([1, 2, 1])
+    
     with col_b:
-        uploaded_file = st.file_uploader("Click or drag to upload a video", type=["mp4", "mov", "webm", "mkv"])
-        
-        existing_files = [f for f in os.listdir(INPUT_DIR) if f.endswith((".mp4", ".mov", ".mkv", ".webm"))]
-        if existing_files:
-            st.markdown("---")
-            st.subheader("Or select an existing workspace video:")
-            selected_existing = st.selectbox("Your Videos", existing_files)
-            if st.button("🚀 Process Selected Video", type="primary", use_container_width=True):
-                st.session_state.active_video = selected_existing
+        with st.container(border=True):
+            st.markdown("### 📤 Upload a New Video")
+            uploaded_file = st.file_uploader("Drag & drop your file", type=["mp4", "mov", "webm", "mkv"], label_visibility="collapsed")
+            
+            if uploaded_file is not None:
+                save_path = os.path.join(INPUT_DIR, uploaded_file.name)
+                with open(save_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                st.session_state.active_video = uploaded_file.name
                 st.session_state.current_step = "dashboard"
                 st.rerun()
-
-        if uploaded_file is not None:
-            save_path = os.path.join(INPUT_DIR, uploaded_file.name)
-            with open(save_path, "wb") as f:
-                f.write(uploaded_file.getbuffer())
-            st.session_state.active_video = uploaded_file.name
-            st.session_state.current_step = "dashboard"
-            st.rerun()
+                
+        existing_files = [f for f in os.listdir(INPUT_DIR) if f.endswith((".mp4", ".mov", ".mkv", ".webm"))]
+        if existing_files:
+            st.markdown("<br>", unsafe_allow_html=True)
+            with st.container(border=True):
+                st.markdown("### 🗂️ Or open from workspace")
+                selected_existing = st.selectbox("Your Videos", existing_files, label_visibility="collapsed")
+                
+                if st.button("🚀 Process Selected Video", type="primary", use_container_width=True):
+                    st.session_state.active_video = selected_existing
+                    st.session_state.current_step = "dashboard"
+                    st.rerun()
 
 # ==========================================
 # SCREEN 2 & 3: AI CLIP DASHBOARD
