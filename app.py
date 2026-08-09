@@ -34,9 +34,9 @@ st.markdown("""
     <div class="custom-header">
         <div class="header-logo">🎬 AutoDirector AI</div>
         <div class="header-links">
-            <a href="#">Dashboard</a>
-            <a href="#">Pricing</a>
-            <a href="#">Support</a>
+            <a href="/" target="_self">Dashboard</a>
+            <a href="/pricing" target="_self">Pricing</a>
+            <a href="/support" target="_self">Support</a>
         </div>
     </div>
     
