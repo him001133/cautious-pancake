@@ -113,10 +113,10 @@ if st.session_state.current_step == "upload":
     st.markdown("""
         <div style='text-align: center; padding: 4rem 0 2rem 0;'>
             <h1 style='font-size: 4rem; font-weight: 900; margin-bottom: 15px; line-height: 1.2;'>
-                Turn Podcasts into <br><span style='color: #ff4b4b;'>Viral 9:16 Shorts</span>
+                Transform Long Videos into <br><span style='color: #ff4b4b;'>Viral AI Clips</span>
             </h1>
             <p style='font-size: 1.3rem; color: #a3a8b8; max-width: 800px; margin: 0 auto;'>
-                Stop scrubbing through hours of footage. Our AI story engine finds the highest-retention hooks and auto-frames the action instantly.
+                Stop scrubbing through hours of raw footage. Our AI story engine finds the best moments from any video and auto-frames the action instantly.
             </p>
         </div>
     """, unsafe_allow_html=True)
