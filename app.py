@@ -158,36 +158,29 @@ def generate_frame_preview(video_path, timestamp_s, filter_str):
     return preview_path if os.path.exists(preview_path) else None
 
 # ==========================================
-# SCREEN 1: UPLOAD YOUR VIDEO (UPGRADED UI)
+# SCREEN 1: FULL LANDING PAGE & UPLOAD
 # ==========================================
 if st.session_state.current_step == "upload":
-    # 1. Hero Banner
+    
+    # 1. Giant Hero Section
     st.markdown("""
-        <div style='text-align: center; padding: 2rem 0;'>
-            <h1 style='font-size: 3.5rem; font-weight: 800; margin-bottom: 0;'>🎬 AutoDirector AI</h1>
-            <p style='font-size: 1.2rem; color: #a3a8b8;'>Turn long-form podcasts into viral 9:16 shorts in seconds.</p>
+        <div style='text-align: center; padding: 4rem 0 2rem 0;'>
+            <h1 style='font-size: 4rem; font-weight: 900; margin-bottom: 15px; line-height: 1.2;'>
+                Turn Podcasts into <br><span style='color: #ff4b4b;'>Viral 9:16 Shorts</span>
+            </h1>
+            <p style='font-size: 1.3rem; color: #a3a8b8; max-width: 800px; margin: 0 auto;'>
+                Stop scrubbing through hours of footage. Our AI story engine finds the highest-retention hooks and auto-frames the action instantly.
+            </p>
         </div>
     """, unsafe_allow_html=True)
     
-    # 2. Features Grid
-    st.markdown("---")
-    f1, f2, f3 = st.columns(3)
-    with f1:
-        st.info("🧠 **AI Story Engine**\n\nAutomatically finds the highest-retention hooks and emotional spikes.")
-    with f2:
-        st.info("🎥 **Smart Framing**\n\nAuto-tracks faces and centers the action for TikTok, Shorts, and Reels.")
-    with f3:
-        st.info("⚡ **Instant Export**\n\nRenders the final MP4s directly in your browser with no watermarks.")
-    st.markdown("---")
-    
-    # 3. Upload & Workspace Cards
+    # 2. Main Call-to-Action (Upload Area)
     st.markdown("<br>", unsafe_allow_html=True)
-    col_a, col_b, col_c = st.columns([1, 2, 1])
-    
-    with col_b:
+    col_space1, col_main, col_space2 = st.columns([1, 2, 1])
+    with col_main:
         with st.container(border=True):
-            st.markdown("### 📤 Upload a New Video")
-            uploaded_file = st.file_uploader("Drag & drop your file", type=["mp4", "mov", "webm", "mkv"], label_visibility="collapsed")
+            st.markdown("<h3 style='text-align: center; margin-bottom: 0;'>Start Clipping for Free</h3>", unsafe_allow_html=True)
+            uploaded_file = st.file_uploader("Upload a new video", type=["mp4", "mov", "webm", "mkv"], label_visibility="collapsed")
             
             if uploaded_file is not None:
                 save_path = os.path.join(INPUT_DIR, uploaded_file.name)
@@ -199,15 +192,60 @@ if st.session_state.current_step == "upload":
                 
         existing_files = [f for f in os.listdir(INPUT_DIR) if f.endswith((".mp4", ".mov", ".mkv", ".webm"))]
         if existing_files:
-            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("<div style='text-align: center; margin: 15px 0; color: #6b7280; font-size: 0.9rem;'>— or open a recent project —</div>", unsafe_allow_html=True)
             with st.container(border=True):
-                st.markdown("### 🗂️ Or open from workspace")
                 selected_existing = st.selectbox("Your Videos", existing_files, label_visibility="collapsed")
-                
                 if st.button("🚀 Process Selected Video", type="primary", use_container_width=True):
                     st.session_state.active_video = selected_existing
                     st.session_state.current_step = "dashboard"
                     st.rerun()
+
+    # 3. How It Works
+    st.markdown("<br><br><br><h2 style='text-align: center;'>How It Works</h2><hr style='border-color: #2e303e;'>", unsafe_allow_html=True)
+    s1, s2, s3 = st.columns(3)
+    with s1:
+        st.markdown("### 1️⃣ Upload")
+        st.write("Drop in your long-form MP4. We support podcasts, interviews, and gaming VODs up to 800MB directly in the browser.")
+    with s2:
+        st.markdown("### 2️⃣ AI Analysis")
+        st.write("Our Gemini-powered engine reads the transcript to find emotional spikes, jokes, and high-retention viral hooks.")
+    with s3:
+        st.markdown("### 3️⃣ Auto-Frame")
+        st.write("Choose your layout. We automatically crop the landscape video to a perfect 9:16 and export a watermark-free MP4.")
+
+    # 4. Pricing Table
+    st.markdown("<br><br><br><h2 style='text-align: center;'>Simple Pricing</h2><hr style='border-color: #2e303e;'>", unsafe_allow_html=True)
+    p1, p2, p3 = st.columns(3)
+    with p1:
+        with st.container(border=True):
+            st.markdown("### Hobby")
+            st.markdown("## $0<span style='font-size: 1rem; color: gray;'>/mo</span>", unsafe_allow_html=True)
+            st.markdown("- 5 uploads per month\n- 720p Export\n- Standard AI Engine")
+            st.button("Current Plan", disabled=True, use_container_width=True)
+    with p2:
+        with st.container(border=True):
+            st.markdown("### Creator 🚀")
+            st.markdown("## $15<span style='font-size: 1rem; color: gray;'>/mo</span>", unsafe_allow_html=True)
+            st.markdown("- 50 uploads per month\n- 1080p Export\n- Face Tracking Crop")
+            st.button("Upgrade to Creator", type="primary", use_container_width=True)
+    with p3:
+        with st.container(border=True):
+            st.markdown("### Studio")
+            st.markdown("## $49<span style='font-size: 1rem; color: gray;'>/mo</span>", unsafe_allow_html=True)
+            st.markdown("- Unlimited uploads\n- 4K ProRes Export\n- Custom Watermarks")
+            st.button("Contact Sales", use_container_width=True)
+
+    # 5. FAQ Section
+    st.markdown("<br><br><br><h2 style='text-align: center;'>Frequently Asked Questions</h2><hr style='border-color: #2e303e;'>", unsafe_allow_html=True)
+    with st.expander("Does this work for non-English videos?"):
+        st.write("Yes! Our built-in Whisper AI model automatically translates and transcribes over 90 languages with extreme accuracy.")
+    with st.expander("How long does processing take?"):
+        st.write("Typically, a 10-minute video takes about 2 to 3 minutes to transcribe and clip on our cloud servers.")
+    with st.expander("Are there watermarks on the free tier?"):
+        st.write("No. We believe in providing value first. All exports from AutoDirector AI are 100% watermark-free, even on the Hobby plan.")
+    
+    # Extra padding at the bottom so the sticky footer doesn't cover content
+    st.markdown("<br><br><br><br>", unsafe_allow_html=True)
 
 # ==========================================
 # SCREEN 2 & 3: AI CLIP DASHBOARD
