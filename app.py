@@ -32,6 +32,9 @@ if "detected_clips" not in st.session_state: st.session_state.detected_clips = [
 if "selected_clip_idx" not in st.session_state: st.session_state.selected_clip_idx = 0
 if "framing_mode" not in st.session_state: st.session_state.framing_mode = "Vertical"
 if "crop_x_percent" not in st.session_state: st.session_state.crop_x_percent = 50
+if "transcript_data" not in st.session_state: st.session_state.transcript_data = []
+if "current_subs" not in st.session_state: st.session_state.current_subs = []
+if "last_clip_idx" not in st.session_state: st.session_state.last_clip_idx = -1
 
 # --- CUSTOM HEADER ---
 nav_c1, nav_c2, nav_c3, nav_c4, nav_c5 = st.columns([5, 1.2, 1, 1, 1.5], vertical_alignment="center")
@@ -48,6 +51,9 @@ if st.sidebar.button("➕ Edit New Video", type="primary", use_container_width=T
     st.session_state.active_video = None
     st.session_state.detected_clips = []
     st.session_state.selected_clip_idx = 0
+    st.session_state.transcript_data = []
+    st.session_state.current_subs = []
+    st.session_state.last_clip_idx = -1
     st.rerun()
 # ----------------------------------
 
@@ -61,9 +67,40 @@ os.makedirs(PREVIEW_DIR, exist_ok=True)
 
 @st.cache_resource
 def load_whisper_model():
+    # Keeping 'tiny' for maximum speed since Gemini will handle the corrections
     return WhisperModel("tiny", device="cpu", compute_type="int8", cpu_threads=4, num_workers=2)
 
 whisper_model = load_whisper_model()
+
+# --- SUBTITLE GENERATOR LOGIC ---
+def format_ass_time(seconds):
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    cs = int((seconds % 1) * 100)
+    return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
+
+def create_ass_file(subs, filepath="subs.ass"):
+    ass_content = f"""[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,90,&H0000FFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,6,3,2,10,10,150,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
+    for sub in subs:
+        start_str = format_ass_time(sub['start'])
+        end_str = format_ass_time(sub['end'])
+        text = str(sub['text']).replace('\n', ' ')
+        ass_content += f"Dialogue: 0,{start_str},{end_str},Default,,0,0,0,,{text}\n"
+
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(ass_content)
 
 def build_layout_ffmpeg_filter(mode, crop_x_pct=50):
     x_factor = crop_x_pct / 100.0
@@ -103,7 +140,6 @@ if st.session_state.current_step == "upload":
         with st.container(border=True):
             st.markdown("<h3 style='text-align: center; margin-bottom: 15px;'>📥 Add Video to Workspace</h3>", unsafe_allow_html=True)
             
-            # --- NEW TABBED INTERFACE ---
             tab_upload, tab_youtube = st.tabs(["📁 Upload File", "🔗 YouTube Link"])
             
             with tab_upload:
@@ -121,15 +157,13 @@ if st.session_state.current_step == "upload":
                 yt_url = st.text_input("Paste YouTube URL here", placeholder="https://www.youtube.com/watch?v=...")
                 if st.button("📥 Download & Process", type="primary", use_container_width=True):
                     if yt_url:
-                        with st.spinner("Downloading high-quality video from YouTube... This may take a minute."):
+                        with st.spinner("Downloading video from YouTube... This may take a moment."):
                             try:
-                                # Configure yt-dlp to grab MP4 format (cap at 1080p to save server memory)
                                 ydl_opts = {
-                                    'format': 'bestvideo[ext=mp4][height<=1080]+bestaudio[ext=m4a]/best[ext=mp4][height<=1080]/best',
+                                    'format': 'best',
                                     'outtmpl': os.path.join(INPUT_DIR, '%(id)s.%(ext)s'),
                                     'noplaylist': True,
                                     'quiet': True,
-                                    'merge_output_format': 'mp4'
                                 }
                                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                                     info_dict = ydl.extract_info(yt_url, download=True)
@@ -142,7 +176,6 @@ if st.session_state.current_step == "upload":
                                 st.error(f"Failed to download video. Ensure the link is valid and public. Error: {e}")
                     else:
                         st.warning("Please paste a valid YouTube link first.")
-            # --------------------------------
             
             existing_files = [f for f in os.listdir(INPUT_DIR) if f.endswith((".mp4", ".mov", ".mkv", ".webm"))]
             if existing_files:
@@ -159,21 +192,6 @@ if st.session_state.current_step == "upload":
     with s1: st.markdown("### 1️⃣ Upload\nDrop in your long-form MP4. We support podcasts, interviews, and gaming VODs up to 800MB directly in the browser.")
     with s2: st.markdown("### 2️⃣ AI Analysis\nOur Gemini-powered engine reads the transcript to find emotional spikes, jokes, and high-retention viral hooks.")
     with s3: st.markdown("### 3️⃣ Auto-Frame\nChoose your layout. We automatically crop the landscape video to a perfect 9:16 and export a watermark-free MP4.")
-
-    st.markdown("<br><br><br><h2 style='text-align: center;'>Simple Pricing</h2><hr style='border-color: #2e303e;'>", unsafe_allow_html=True)
-    p1, p2, p3 = st.columns(3)
-    with p1:
-        with st.container(border=True):
-            st.markdown("### Hobby\n## $0<span style='font-size: 1rem; color: gray;'>/mo</span>\n- 5 uploads per month\n- 720p Export", unsafe_allow_html=True)
-            st.button("Current Plan", disabled=True, use_container_width=True)
-    with p2:
-        with st.container(border=True):
-            st.markdown("### Creator 🚀\n## $15<span style='font-size: 1rem; color: gray;'>/mo</span>\n- 50 uploads per month\n- 1080p Export", unsafe_allow_html=True)
-            st.button("Upgrade to Creator", type="primary", use_container_width=True)
-    with p3:
-        with st.container(border=True):
-            st.markdown("### Studio\n## $49<span style='font-size: 1rem; color: gray;'>/mo</span>\n- Unlimited uploads\n- 4K ProRes Export", unsafe_allow_html=True)
-            st.button("Contact Sales", use_container_width=True)
 
     st.markdown("<br><br><br><br>", unsafe_allow_html=True)
 
@@ -202,7 +220,12 @@ elif st.session_state.current_step == "dashboard":
                 segments, _ = whisper_model.transcribe(video_path, word_timestamps=True)
                 transcript_lines = []
                 all_words = []
+                
+                # Save exact timing for our editable subtitles
+                st.session_state.transcript_data = []
+                
                 for s in segments:
+                    st.session_state.transcript_data.append({"start": s.start, "end": s.end, "text": s.text.strip()})
                     for w in s.words: all_words.append({"word": w.word, "start": w.start, "end": w.end})
                     transcript_lines.append(f"[{s.start:.1f}s - {s.end:.1f}s] {s.text.strip()}")
                 
@@ -235,7 +258,7 @@ elif st.session_state.current_step == "dashboard":
                             st.session_state.selected_clip_idx = idx; st.session_state.framing_mode = "Vertical"; st.session_state.current_step = "editor"; st.rerun()
 
 # ==========================================
-# SCREEN 4: POSITION THE CROP
+# SCREEN 4: POSITION & SUBTITLES
 # ==========================================
 elif st.session_state.current_step == "editor":
     top_col1, top_col2 = st.columns([1, 8])
@@ -243,7 +266,7 @@ elif st.session_state.current_step == "editor":
         if st.button("← Back"):
             st.session_state.current_step = "dashboard"
             st.rerun()
-    with top_col2: st.subheader("Position the Crop")
+    with top_col2: st.subheader("Studio Editor")
 
     clip = st.session_state.detected_clips[st.session_state.selected_clip_idx]
     video_path = os.path.join(INPUT_DIR, st.session_state.active_video)
@@ -261,12 +284,84 @@ elif st.session_state.current_step == "editor":
     with col_edit:
         st.markdown("#### Adjust Camera Position")
         st.session_state.crop_x_percent = st.slider("Horizontal Position (X-Axis)", min_value=0, max_value=100, value=st.session_state.crop_x_percent)
-        filter_str = build_layout_ffmpeg_filter(st.session_state.framing_mode, st.session_state.crop_x_percent)
+        
+        st.markdown("---")
+        
+        # --- SUBTITLE EDITOR & AI PROOFREADER ---
+        st.markdown("#### 💬 Auto-Subtitles")
+        enable_subs = st.checkbox("Burn Viral Subtitles onto video", value=True)
+        
+        clip_start = clip['start']
+        clip_end = clip['end']
+        
+        # Initialize or reload the specific clip's subtitle data into the session state
+        if st.session_state.last_clip_idx != st.session_state.selected_clip_idx:
+            clip_subs = []
+            for t in st.session_state.transcript_data:
+                if t['end'] > clip_start and t['start'] < clip_end:
+                    adj_start = max(0.0, t['start'] - clip_start)
+                    adj_end = min(clip_end - clip_start, t['end'] - clip_start)
+                    clip_subs.append({"start": adj_start, "end": adj_end, "text": t['text']})
+            st.session_state.current_subs = clip_subs
+            st.session_state.last_clip_idx = st.session_state.selected_clip_idx
+
+        edited_subs = []
+        if enable_subs and st.session_state.current_subs:
+            # The Magic Gemini Button
+            if st.button("✨ Auto-Fix Spelling with Gemini", use_container_width=True):
+                active_key = os.environ.get("GEMINI_API_KEY")
+                if not active_key:
+                    st.error("Please add your GEMINI_API_KEY environment variable to use AI features.")
+                else:
+                    with st.spinner("Gemini is analyzing the context and fixing typos..."):
+                        try:
+                            client = genai.Client(api_key=active_key)
+                            prompt = f"""You are a professional proofreader fixing a transcription.
+                            I am giving you a JSON array of subtitles. Fix spelling mistakes, grammar errors, and common AI mishearings in the 'text' field based on context.
+                            CRITICAL RULES:
+                            1. DO NOT change the 'start' or 'end' values.
+                            2. Keep the exact same number of items in the array.
+                            3. Return ONLY a valid JSON array.
+                            
+                            JSON Array:
+                            {json.dumps(st.session_state.current_subs)}"""
+                            
+                            res = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
+                            clean_json = re.sub(r'```json\n|\n```|```', '', res.text).strip()
+                            
+                            # Overwrite the state with the fixed text and refresh the grid
+                            st.session_state.current_subs = json.loads(clean_json)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed to proofread. Error: {e}")
+
+            st.caption("Double-click any text below to tweak it manually:")
+            # Render the data editor bound to our state
+            edited_subs = st.data_editor(
+                st.session_state.current_subs,
+                column_config={
+                    "start": st.column_config.NumberColumn("Start (s)", format="%.2f", disabled=True),
+                    "end": st.column_config.NumberColumn("End (s)", format="%.2f", disabled=True),
+                    "text": st.column_config.TextColumn("Subtitle Text")
+                },
+                num_rows="dynamic",
+                use_container_width=True
+            )
+        elif enable_subs and not st.session_state.current_subs:
+            st.warning("No spoken words found in this clip segment.")
+
         st.markdown("---")
         if st.button("⚡ Render Final Short", type="primary", use_container_width=True):
             out_name = f"clipzi_{st.session_state.framing_mode}_{st.session_state.selected_clip_idx+1}.mp4"
             out_path = os.path.join(OUTPUT_DIR, out_name)
-            with st.spinner("Rendering short with selected layout..."):
+            
+            filter_str = build_layout_ffmpeg_filter(st.session_state.framing_mode, st.session_state.crop_x_percent)
+            
+            if enable_subs and edited_subs:
+                create_ass_file(edited_subs, "subs.ass")
+                filter_str += ",subtitles=subs.ass"
+                
+            with st.spinner("Rendering short with selected layout & subtitles..."):
                 cmd = ["ffmpeg", "-y", "-ss", str(clip['start']), "-i", video_path, "-t", str(clip['end'] - clip['start']), "-vf", filter_str, "-c:v", "libx264", "-preset", "fast", "-c:a", "aac", out_path]
                 subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 st.success(f"Rendered! Saved to {out_path}")
@@ -274,7 +369,13 @@ elif st.session_state.current_step == "editor":
 
     with col_prev:
         st.markdown("#### Live Preview (9:16)")
-        filter_str = build_layout_ffmpeg_filter(st.session_state.framing_mode, st.session_state.crop_x_percent)
+        
+        preview_filter = build_layout_ffmpeg_filter(st.session_state.framing_mode, st.session_state.crop_x_percent)
+        
+        if enable_subs and edited_subs:
+            create_ass_file(edited_subs, "subs.ass")
+            preview_filter += ",subtitles=subs.ass"
+            
         mid_point = (clip['start'] + clip['end']) / 2.0
-        preview_img = generate_frame_preview(video_path, mid_point, filter_str)
+        preview_img = generate_frame_preview(video_path, mid_point, preview_filter)
         if preview_img: st.image(preview_img, caption=f"Mode: {st.session_state.framing_mode}", use_container_width=True)
