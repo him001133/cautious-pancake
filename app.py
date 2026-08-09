@@ -43,9 +43,9 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-# FETCH SESSION STATE
-authentication_status = st.session_state.get("authentication_status")
-name = st.session_state.get("name")
+# Helper function to always check the most up-to-date login status
+def is_authenticated():
+    return st.session_state.get("authentication_status")
 
 # Session State Initialization
 if "current_step" not in st.session_state: st.session_state.current_step = "upload"
@@ -62,19 +62,17 @@ with nav_c2: st.page_link("app.py", label="Dashboard", icon="🏠")
 with nav_c3: st.page_link("pages/pricing.py", label="Pricing", icon="💳")
 with nav_c4: st.page_link("pages/support.py", label="Support", icon="🎧")
 with nav_c5:
-    if authentication_status:
+    if is_authenticated():
         authenticator.logout("Logout", "main")
     else:
-        # If logged out, this header button just makes sure they are on the home page where the form is
         if st.button("Login 🔒", use_container_width=True):
             st.session_state.current_step = "upload"
             st.rerun()
 st.markdown("---")
 
-
 # --- SIDEBAR LOGIC ---
-if authentication_status:
-    st.sidebar.success(f"Welcome back, {name}!")
+if is_authenticated():
+    st.sidebar.success(f"Welcome back, {st.session_state.get('name')}!")
     st.sidebar.markdown("---")
     if st.sidebar.button("➕ Edit New Video", type="primary", use_container_width=True):
         st.session_state.current_step = "upload"
@@ -82,7 +80,7 @@ if authentication_status:
         st.session_state.detected_clips = []
         st.session_state.selected_clip_idx = 0
         st.rerun()
-elif authentication_status is False:
+elif st.session_state.get("authentication_status") is False:
     st.sidebar.error("Username/password is incorrect")
 # ----------------------------------
 
@@ -136,7 +134,7 @@ if st.session_state.current_step == "upload":
     col_space1, col_main, col_space2 = st.columns([1, 2, 1])
     with col_main:
         with st.container(border=True):
-            if authentication_status:
+            if is_authenticated():
                 st.markdown("<h3 style='text-align: center; margin-bottom: 0;'>📥 Upload to Workspace</h3>", unsafe_allow_html=True)
                 uploaded_file = st.file_uploader("Upload a new video", type=["mp4", "mov", "webm", "mkv"], label_visibility="collapsed")
                 
@@ -158,10 +156,15 @@ if st.session_state.current_step == "upload":
                             st.session_state.current_step = "dashboard"
                             st.rerun()
             else:
-                # The form now lives permanently on the main page where it won't vanish!
                 st.markdown("<h3 style='text-align: center; margin-bottom: 10px;'>🔒 Workspace Access</h3>", unsafe_allow_html=True)
                 st.info("**(Demo Username: `creator` | Password: `password123`)**")
+                
+                # Render the login form
                 authenticator.login(location='main')
+                
+                # MAGIC FIX: If the login form just successfully changed the state, force an instant screen redraw!
+                if is_authenticated():
+                    st.rerun()
 
     st.markdown("<br><br><br><h2 style='text-align: center;'>How It Works</h2><hr style='border-color: #2e303e;'>", unsafe_allow_html=True)
     s1, s2, s3 = st.columns(3)
@@ -189,7 +192,7 @@ if st.session_state.current_step == "upload":
 # ==========================================
 # SCREEN 2 & 3: AI CLIP DASHBOARD (LOCKED)
 # ==========================================
-elif st.session_state.current_step == "dashboard" and authentication_status:
+elif st.session_state.current_step == "dashboard" and is_authenticated():
     top_col1, top_col2 = st.columns([1, 8])
     with top_col1:
         if st.button("← Back"):
@@ -246,7 +249,7 @@ elif st.session_state.current_step == "dashboard" and authentication_status:
 # ==========================================
 # SCREEN 4: POSITION THE CROP (LOCKED)
 # ==========================================
-elif st.session_state.current_step == "editor" and authentication_status:
+elif st.session_state.current_step == "editor" and is_authenticated():
     top_col1, top_col2 = st.columns([1, 8])
     with top_col1:
         if st.button("← Back"):
@@ -289,7 +292,7 @@ elif st.session_state.current_step == "editor" and authentication_status:
         if preview_img: st.image(preview_img, caption=f"Mode: {st.session_state.framing_mode}", use_container_width=True)
 
 # Security Fallback
-elif not authentication_status and st.session_state.current_step != "upload":
+elif not is_authenticated() and st.session_state.current_step != "upload":
     st.error("You must be logged in to view this page.")
     if st.button("Return Home"):
         st.session_state.current_step = "upload"
