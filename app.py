@@ -1,10 +1,11 @@
 import os
 import re
 import json
+import uuid
 import subprocess
 import numpy as np
+import requests
 import streamlit as st
-import yt_dlp
 from faster_whisper import WhisperModel
 from google import genai
 from google.genai import types
@@ -67,7 +68,6 @@ os.makedirs(PREVIEW_DIR, exist_ok=True)
 
 @st.cache_resource
 def load_whisper_model():
-    # Keeping 'tiny' for maximum speed since Gemini will handle the corrections
     return WhisperModel("tiny", device="cpu", compute_type="int8", cpu_threads=4, num_workers=2)
 
 whisper_model = load_whisper_model()
@@ -155,25 +155,42 @@ if st.session_state.current_step == "upload":
             with tab_youtube:
                 st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
                 yt_url = st.text_input("Paste YouTube URL here", placeholder="https://www.youtube.com/watch?v=...")
-                if st.button("📥 Download & Process", type="primary", use_container_width=True):
+                if st.button("📥 Download via API", type="primary", use_container_width=True):
                     if yt_url:
-                        with st.spinner("Downloading video from YouTube... This may take a moment."):
+                        with st.spinner("Connecting to external API & streaming to disk (bypassing RAM limits)..."):
                             try:
-                                ydl_opts = {
-                                    'format': 'best',
-                                    'outtmpl': os.path.join(INPUT_DIR, '%(id)s.%(ext)s'),
-                                    'noplaylist': True,
-                                    'quiet': True,
+                                api_url = "https://api.cobalt.tools/api/json"
+                                headers = {
+                                    "Accept": "application/json",
+                                    "Content-Type": "application/json",
+                                    "User-Agent": "AutoDirector-Studio/1.0"
                                 }
-                                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                                    info_dict = ydl.extract_info(yt_url, download=True)
-                                    filename = f"{info_dict['id']}.mp4" 
+                                payload = {"url": yt_url, "videoQuality": "1080"}
+                                
+                                api_res = requests.post(api_url, json=payload, headers=headers)
+                                
+                                if api_res.status_code == 200:
+                                    direct_link = api_res.json().get("url")
                                     
-                                st.session_state.active_video = filename
-                                st.session_state.current_step = "dashboard"
-                                st.rerun()
+                                    if direct_link:
+                                        filename = f"yt_{uuid.uuid4().hex[:8]}.mp4"
+                                        save_path = os.path.join(INPUT_DIR, filename)
+                                        
+                                        with requests.get(direct_link, stream=True) as r:
+                                            r.raise_for_status()
+                                            with open(save_path, 'wb') as f:
+                                                for chunk in r.iter_content(chunk_size=8192):
+                                                    f.write(chunk)
+                                                    
+                                        st.session_state.active_video = filename
+                                        st.session_state.current_step = "dashboard"
+                                        st.rerun()
+                                    else:
+                                        st.error("API returned success, but no download link was found.")
+                                else:
+                                    st.error(f"API Error ({api_res.status_code}): {api_res.text}")
                             except Exception as e:
-                                st.error(f"Failed to download video. Ensure the link is valid and public. Error: {e}")
+                                st.error(f"Failed to process external API request. Error: {e}")
                     else:
                         st.warning("Please paste a valid YouTube link first.")
             
@@ -216,32 +233,42 @@ elif st.session_state.current_step == "dashboard":
         prompt_input = st.text_input("Describe what you're looking for or hit Auto-Scan", placeholder='"the funniest part", "when they get emotional"...')
         
         if st.button("⚡ Generate AI Clips", type="primary", use_container_width=True):
-            with st.spinner("Transcribing and searching story arcs..."):
-                segments, _ = whisper_model.transcribe(video_path, word_timestamps=True)
-                transcript_lines = []
-                all_words = []
-                
-                # Save exact timing for our editable subtitles
-                st.session_state.transcript_data = []
-                
-                for s in segments:
-                    st.session_state.transcript_data.append({"start": s.start, "end": s.end, "text": s.text.strip()})
-                    for w in s.words: all_words.append({"word": w.word, "start": w.start, "end": w.end})
-                    transcript_lines.append(f"[{s.start:.1f}s - {s.end:.1f}s] {s.text.strip()}")
-                
-                active_key = os.environ.get("GEMINI_API_KEY")
-                if active_key:
-                    try:
-                        client = genai.Client(api_key=active_key)
-                        prompt = f"""Read this transcript and find the 4 most engaging short clips. Return ONLY a valid JSON array: [{{"title": "Why surfing is the ultimate metaphor", "start": 12.0, "end": 36.0}}] \nTranscript:\n{"\n".join(transcript_lines)}"""
-                        res = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
-                        clean_json = re.sub(r'```json\n|\n```|```', '', res.text).strip()
-                        st.session_state.detected_clips = json.loads(clean_json)
-                    except Exception as e: st.error(f"API Error: {e}")
-                
-                if not st.session_state.detected_clips and all_words:
-                    total_dur = all_words[-1]["end"]
-                    st.session_state.detected_clips = [{"title": f"Viral Hook Segment #{i+1}", "start": float(i*30), "end": float(i*30 + 25)} for i in range(min(4, int(total_dur // 30)))]
+            with st.spinner("Extracting audio and transcribing... (This may take a minute)"):
+                try:
+                    # SAFTEY MEASURE: Extract lightweight audio file to prevent RAM crashes
+                    audio_path = os.path.join(INPUT_DIR, "temp_audio.wav")
+                    subprocess.run(
+                        ["ffmpeg", "-y", "-i", video_path, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", audio_path], 
+                        check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    )
+
+                    # Pass the tiny audio file to Whisper instead of the heavy video file
+                    segments, _ = whisper_model.transcribe(audio_path, word_timestamps=True)
+                    transcript_lines = []
+                    all_words = []
+                    
+                    st.session_state.transcript_data = []
+                    
+                    for s in segments:
+                        st.session_state.transcript_data.append({"start": s.start, "end": s.end, "text": s.text.strip()})
+                        for w in s.words: all_words.append({"word": w.word, "start": w.start, "end": w.end})
+                        transcript_lines.append(f"[{s.start:.1f}s - {s.end:.1f}s] {s.text.strip()}")
+                    
+                    active_key = os.environ.get("GEMINI_API_KEY")
+                    if active_key:
+                        try:
+                            client = genai.Client(api_key=active_key)
+                            prompt = f"""Read this transcript and find the 4 most engaging short clips. Return ONLY a valid JSON array: [{{"title": "Why surfing is the ultimate metaphor", "start": 12.0, "end": 36.0}}] \nTranscript:\n{"\n".join(transcript_lines)}"""
+                            res = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
+                            clean_json = re.sub(r'```json\n|\n```|```', '', res.text).strip()
+                            st.session_state.detected_clips = json.loads(clean_json)
+                        except Exception as e: st.error(f"API Error: {e}")
+                    
+                    if not st.session_state.detected_clips and all_words:
+                        total_dur = all_words[-1]["end"]
+                        st.session_state.detected_clips = [{"title": f"Viral Hook Segment #{i+1}", "start": float(i*30), "end": float(i*30 + 25)} for i in range(min(4, int(total_dur // 30)))]
+                except Exception as e:
+                    st.error(f"Failed to analyze video: {e}")
         
         if st.session_state.detected_clips:
             st.markdown(f"#### Clips ({len(st.session_state.detected_clips)})")
@@ -287,14 +314,12 @@ elif st.session_state.current_step == "editor":
         
         st.markdown("---")
         
-        # --- SUBTITLE EDITOR & AI PROOFREADER ---
         st.markdown("#### 💬 Auto-Subtitles")
         enable_subs = st.checkbox("Burn Viral Subtitles onto video", value=True)
         
         clip_start = clip['start']
         clip_end = clip['end']
         
-        # Initialize or reload the specific clip's subtitle data into the session state
         if st.session_state.last_clip_idx != st.session_state.selected_clip_idx:
             clip_subs = []
             for t in st.session_state.transcript_data:
@@ -307,7 +332,6 @@ elif st.session_state.current_step == "editor":
 
         edited_subs = []
         if enable_subs and st.session_state.current_subs:
-            # The Magic Gemini Button
             if st.button("✨ Auto-Fix Spelling with Gemini", use_container_width=True):
                 active_key = os.environ.get("GEMINI_API_KEY")
                 if not active_key:
@@ -329,14 +353,12 @@ elif st.session_state.current_step == "editor":
                             res = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
                             clean_json = re.sub(r'```json\n|\n```|```', '', res.text).strip()
                             
-                            # Overwrite the state with the fixed text and refresh the grid
                             st.session_state.current_subs = json.loads(clean_json)
                             st.rerun()
                         except Exception as e:
                             st.error(f"Failed to proofread. Error: {e}")
 
             st.caption("Double-click any text below to tweak it manually:")
-            # Render the data editor bound to our state
             edited_subs = st.data_editor(
                 st.session_state.current_subs,
                 column_config={
