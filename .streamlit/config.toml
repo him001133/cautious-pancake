@@ -1,9 +1,2 @@
 [server]
-maxUploadSize = 1000
-
-[theme]
-base = "dark"
-primaryColor = "#ff4b4b"
-backgroundColor = "#0e1117"
-secondaryBackgroundColor = "#1e212b"
-font = "sans serif"
+fileWatcherType = "none"
