@@ -4,7 +4,6 @@ import json
 import subprocess
 import numpy as np
 import streamlit as st
-import streamlit_authenticator as stauth
 from faster_whisper import WhisperModel
 from google import genai
 from google.genai import types
@@ -25,28 +24,6 @@ st.markdown("""
     <div class="custom-footer">&copy; 2026 AutoDirector AI Studio. All rights reserved.</div>
 """, unsafe_allow_html=True)
 
-# --- AUTHENTICATION SETUP ---
-credentials = {
-    "usernames": {
-        "creator": {
-            "email": "creator@example.com",
-            "name": "Pro Creator",
-            "password": "$2b$12$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjIQqiRQYm" 
-        }
-    }
-}
-
-authenticator = stauth.Authenticate(
-    credentials,
-    "autodirector_cookie",
-    "secret_key_123",
-    cookie_expiry_days=30
-)
-
-# Helper function to always check the most up-to-date login status
-def is_authenticated():
-    return st.session_state.get("authentication_status")
-
 # Session State Initialization
 if "current_step" not in st.session_state: st.session_state.current_step = "upload"
 if "active_video" not in st.session_state: st.session_state.active_video = None
@@ -61,27 +38,16 @@ with nav_c1: st.markdown("<h3 style='margin: 0;'>🎬 AutoDirector AI</h3>", uns
 with nav_c2: st.page_link("app.py", label="Dashboard", icon="🏠")
 with nav_c3: st.page_link("pages/pricing.py", label="Pricing", icon="💳")
 with nav_c4: st.page_link("pages/support.py", label="Support", icon="🎧")
-with nav_c5:
-    if is_authenticated():
-        authenticator.logout("Logout", "main")
-    else:
-        if st.button("Login 🔒", use_container_width=True):
-            st.session_state.current_step = "upload"
-            st.rerun()
 st.markdown("---")
 
 # --- SIDEBAR LOGIC ---
-if is_authenticated():
-    st.sidebar.success(f"Welcome back, {st.session_state.get('name')}!")
-    st.sidebar.markdown("---")
-    if st.sidebar.button("➕ Edit New Video", type="primary", use_container_width=True):
-        st.session_state.current_step = "upload"
-        st.session_state.active_video = None
-        st.session_state.detected_clips = []
-        st.session_state.selected_clip_idx = 0
-        st.rerun()
-elif st.session_state.get("authentication_status") is False:
-    st.sidebar.error("Username/password is incorrect")
+st.sidebar.markdown("---")
+if st.sidebar.button("➕ Edit New Video", type="primary", use_container_width=True):
+    st.session_state.current_step = "upload"
+    st.session_state.active_video = None
+    st.session_state.detected_clips = []
+    st.session_state.selected_clip_idx = 0
+    st.rerun()
 # ----------------------------------
 
 INPUT_DIR = "inputs"
@@ -134,37 +100,26 @@ if st.session_state.current_step == "upload":
     col_space1, col_main, col_space2 = st.columns([1, 2, 1])
     with col_main:
         with st.container(border=True):
-            if is_authenticated():
-                st.markdown("<h3 style='text-align: center; margin-bottom: 0;'>📥 Upload to Workspace</h3>", unsafe_allow_html=True)
-                uploaded_file = st.file_uploader("Upload a new video", type=["mp4", "mov", "webm", "mkv"], label_visibility="collapsed")
+            st.markdown("<h3 style='text-align: center; margin-bottom: 0;'>📥 Upload to Workspace</h3>", unsafe_allow_html=True)
+            uploaded_file = st.file_uploader("Upload a new video", type=["mp4", "mov", "webm", "mkv"], label_visibility="collapsed")
+            
+            if uploaded_file is not None:
+                save_path = os.path.join(INPUT_DIR, uploaded_file.name)
+                with open(save_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                st.session_state.active_video = uploaded_file.name
+                st.session_state.current_step = "dashboard"
+                st.rerun()
                 
-                if uploaded_file is not None:
-                    save_path = os.path.join(INPUT_DIR, uploaded_file.name)
-                    with open(save_path, "wb") as f:
-                        f.write(uploaded_file.getbuffer())
-                    st.session_state.active_video = uploaded_file.name
-                    st.session_state.current_step = "dashboard"
-                    st.rerun()
-                    
-                existing_files = [f for f in os.listdir(INPUT_DIR) if f.endswith((".mp4", ".mov", ".mkv", ".webm"))]
-                if existing_files:
-                    st.markdown("<div style='text-align: center; margin: 15px 0; color: #6b7280; font-size: 0.9rem;'>— or open a recent project —</div>", unsafe_allow_html=True)
-                    with st.container(border=True):
-                        selected_existing = st.selectbox("Your Videos", existing_files, label_visibility="collapsed")
-                        if st.button("🚀 Process Selected Video", type="primary", use_container_width=True):
-                            st.session_state.active_video = selected_existing
-                            st.session_state.current_step = "dashboard"
-                            st.rerun()
-            else:
-                st.markdown("<h3 style='text-align: center; margin-bottom: 10px;'>🔒 Workspace Access</h3>", unsafe_allow_html=True)
-                st.info("**(Demo Username: `creator` | Password: `password123`)**")
-                
-                # Render the login form
-                authenticator.login(location='main')
-                
-                # MAGIC FIX: If the login form just successfully changed the state, force an instant screen redraw!
-                if is_authenticated():
-                    st.rerun()
+            existing_files = [f for f in os.listdir(INPUT_DIR) if f.endswith((".mp4", ".mov", ".mkv", ".webm"))]
+            if existing_files:
+                st.markdown("<div style='text-align: center; margin: 15px 0; color: #6b7280; font-size: 0.9rem;'>— or open a recent project —</div>", unsafe_allow_html=True)
+                with st.container(border=True):
+                    selected_existing = st.selectbox("Your Videos", existing_files, label_visibility="collapsed")
+                    if st.button("🚀 Process Selected Video", type="primary", use_container_width=True):
+                        st.session_state.active_video = selected_existing
+                        st.session_state.current_step = "dashboard"
+                        st.rerun()
 
     st.markdown("<br><br><br><h2 style='text-align: center;'>How It Works</h2><hr style='border-color: #2e303e;'>", unsafe_allow_html=True)
     s1, s2, s3 = st.columns(3)
@@ -190,9 +145,9 @@ if st.session_state.current_step == "upload":
     st.markdown("<br><br><br><br>", unsafe_allow_html=True)
 
 # ==========================================
-# SCREEN 2 & 3: AI CLIP DASHBOARD (LOCKED)
+# SCREEN 2 & 3: AI CLIP DASHBOARD
 # ==========================================
-elif st.session_state.current_step == "dashboard" and is_authenticated():
+elif st.session_state.current_step == "dashboard":
     top_col1, top_col2 = st.columns([1, 8])
     with top_col1:
         if st.button("← Back"):
@@ -247,9 +202,9 @@ elif st.session_state.current_step == "dashboard" and is_authenticated():
                             st.session_state.selected_clip_idx = idx; st.session_state.framing_mode = "Vertical"; st.session_state.current_step = "editor"; st.rerun()
 
 # ==========================================
-# SCREEN 4: POSITION THE CROP (LOCKED)
+# SCREEN 4: POSITION THE CROP
 # ==========================================
-elif st.session_state.current_step == "editor" and is_authenticated():
+elif st.session_state.current_step == "editor":
     top_col1, top_col2 = st.columns([1, 8])
     with top_col1:
         if st.button("← Back"):
@@ -290,10 +245,3 @@ elif st.session_state.current_step == "editor" and is_authenticated():
         mid_point = (clip['start'] + clip['end']) / 2.0
         preview_img = generate_frame_preview(video_path, mid_point, filter_str)
         if preview_img: st.image(preview_img, caption=f"Mode: {st.session_state.framing_mode}", use_container_width=True)
-
-# Security Fallback
-elif not is_authenticated() and st.session_state.current_step != "upload":
-    st.error("You must be logged in to view this page.")
-    if st.button("Return Home"):
-        st.session_state.current_step = "upload"
-        st.rerun()
