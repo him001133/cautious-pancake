@@ -1,5 +1,6 @@
-streamlit
-faster-whisper
+streamlit==1.37.0
+faster-whisper==1.0.3
 google-genai
-numpy
-opencv-python-headless
+numpy<2.0.0
+opencv-python-headless==4.10.0.84
+streamlit-authenticator==0.3.2
