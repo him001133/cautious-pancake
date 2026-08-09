@@ -5,6 +5,7 @@ import uuid
 import subprocess
 import numpy as np
 import requests
+import time
 import streamlit as st
 from faster_whisper import WhisperModel
 from google import genai
@@ -241,55 +242,72 @@ elif st.session_state.current_step == "dashboard":
         prompt_input = st.text_input("Describe what you're looking for or hit Auto-Scan", placeholder='"the funniest part", "when they get emotional"...')
         
         if st.button("⚡ Generate AI Clips", type="primary", use_container_width=True):
-            with st.spinner("Extracting audio and transcribing..."):
-                try:
-                    # Clean up any leftover audio files
-                    audio_path = os.path.join(INPUT_DIR, "temp_audio.mp3")
-                    if os.path.exists(audio_path):
-                        try: os.remove(audio_path)
-                        except Exception: pass
+            # Dynamic Step-by-Step Progress Bar
+            progress_bar = st.progress(0, text="Initializing...")
+            
+            try:
+                # STEP 1
+                progress_bar.progress(10, text="Step 1/4: Cleaning up temporary audio files...")
+                audio_path = os.path.join(INPUT_DIR, "temp_audio.mp3")
+                if os.path.exists(audio_path):
+                    try: os.remove(audio_path)
+                    except Exception: pass
 
-                    # Extract lightweight compressed MP3 (16kHz Mono 64k)
-                    cmd = [
-                        "ffmpeg", "-y",
-                        "-i", video_path,
-                        "-vn",
-                        "-ar", "16000",
-                        "-ac", "1",
-                        "-b:a", "64k",
-                        audio_path
-                    ]
+                # STEP 2
+                progress_bar.progress(25, text="Step 2/4: Extracting audio via FFmpeg...")
+                cmd = [
+                    "ffmpeg", "-y",
+                    "-i", video_path,
+                    "-vn",
+                    "-ar", "16000",
+                    "-ac", "1",
+                    "-b:a", "64k",
+                    audio_path
+                ]
+                
+                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if res.returncode != 0:
+                    progress_bar.empty()
+                    st.error(f"FFmpeg audio extraction crashed. Details: {res.stderr[-300:]}")
+                else:
+                    # STEP 3
+                    progress_bar.progress(50, text="Step 3/4: Transcribing audio with Whisper AI...")
+                    segments, _ = whisper_model.transcribe(audio_path, word_timestamps=True)
+                    transcript_lines = []
+                    all_words = []
                     
-                    res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-                    if res.returncode != 0:
-                        st.error(f"FFmpeg audio extraction failed: {res.stderr[-300:]}")
-                    else:
-                        segments, _ = whisper_model.transcribe(audio_path, word_timestamps=True)
-                        transcript_lines = []
-                        all_words = []
+                    st.session_state.transcript_data = []
+                    
+                    for s in segments:
+                        st.session_state.transcript_data.append({"start": s.start, "end": s.end, "text": s.text.strip()})
+                        for w in s.words: all_words.append({"word": w.word, "start": w.start, "end": w.end})
+                        transcript_lines.append(f"[{s.start:.1f}s - {s.end:.1f}s] {s.text.strip()}")
+                    
+                    # STEP 4
+                    progress_bar.progress(80, text="Step 4/4: Gemini is selecting the best viral hooks...")
+                    active_key = os.environ.get("GEMINI_API_KEY")
+                    if active_key:
+                        try:
+                            client = genai.Client(api_key=active_key)
+                            prompt = f"""Read this transcript and find the 4 most engaging short clips. Return ONLY a valid JSON array: [{{"title": "Why surfing is the ultimate metaphor", "start": 12.0, "end": 36.0}}] \nTranscript:\n{"\n".join(transcript_lines)}"""
+                            res_gemini = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
+                            clean_json = re.sub(r'```json\n|\n```|```', '', res_gemini.text).strip()
+                            st.session_state.detected_clips = json.loads(clean_json)
+                        except Exception as e: 
+                            progress_bar.empty()
+                            st.error(f"Gemini API Error: {e}")
+                    
+                    if not st.session_state.detected_clips and all_words:
+                        total_dur = all_words[-1]["end"]
+                        st.session_state.detected_clips = [{"title": f"Viral Hook Segment #{i+1}", "start": float(i*30), "end": float(i*30 + 25)} for i in range(min(4, int(total_dur // 30)))]
                         
-                        st.session_state.transcript_data = []
-                        
-                        for s in segments:
-                            st.session_state.transcript_data.append({"start": s.start, "end": s.end, "text": s.text.strip()})
-                            for w in s.words: all_words.append({"word": w.word, "start": w.start, "end": w.end})
-                            transcript_lines.append(f"[{s.start:.1f}s - {s.end:.1f}s] {s.text.strip()}")
-                        
-                        active_key = os.environ.get("GEMINI_API_KEY")
-                        if active_key:
-                            try:
-                                client = genai.Client(api_key=active_key)
-                                prompt = f"""Read this transcript and find the 4 most engaging short clips. Return ONLY a valid JSON array: [{{"title": "Why surfing is the ultimate metaphor", "start": 12.0, "end": 36.0}}] \nTranscript:\n{"\n".join(transcript_lines)}"""
-                                res_gemini = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
-                                clean_json = re.sub(r'```json\n|\n```|```', '', res_gemini.text).strip()
-                                st.session_state.detected_clips = json.loads(clean_json)
-                            except Exception as e: st.error(f"API Error: {e}")
-                        
-                        if not st.session_state.detected_clips and all_words:
-                            total_dur = all_words[-1]["end"]
-                            st.session_state.detected_clips = [{"title": f"Viral Hook Segment #{i+1}", "start": float(i*30), "end": float(i*30 + 25)} for i in range(min(4, int(total_dur // 30)))]
-                except Exception as e:
-                    st.error(f"Failed to analyze video: {e}")
+                    progress_bar.progress(100, text="Done! Loading clips...")
+                    time.sleep(1)
+                    progress_bar.empty()
+
+            except Exception as e:
+                progress_bar.empty()
+                st.error(f"Failed during analysis: {e}")
         
         if st.session_state.detected_clips:
             st.markdown(f"#### Clips ({len(st.session_state.detected_clips)})")
