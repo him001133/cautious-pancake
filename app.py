@@ -34,10 +34,10 @@ st.markdown("""
     <div class="custom-header">
         <div class="header-logo">🎬 AutoDirector AI</div>
         <div class="header-links">
-            <a href="/" target="_self">Dashboard</a>
-            <a href="/pricing" target="_self">Pricing</a>
-            <a href="/support" target="_self">Support</a>
-        </div>
+        <a href="/" target="_self">Dashboard</a>
+        <a href="/pricing" target="_self">Pricing</a>
+        <a href="/support" target="_self">Support</a>
+    </div>
     </div>
     
     <div class="custom-footer">&copy; 2026 AutoDirector AI Studio. All rights reserved.</div>
