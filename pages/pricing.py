@@ -5,15 +5,20 @@ st.set_page_config(page_title="Pricing | AutoDirector AI", page_icon="🎬", lay
 # --- CUSTOM UI: HEADER & FOOTER ---
 st.markdown("""
     <style>
+    /* Hide the default Streamlit header so it doesn't overlap our custom one */
+    [data-testid="stHeader"] { display: none !important; }
+    
     .custom-header { position: fixed; top: 0; left: 0; width: 100%; background-color: #0e1117; padding: 15px 40px; z-index: 99999; border-bottom: 1px solid #2e303e; display: flex; justify-content: space-between; align-items: center; }
     .header-logo { font-size: 1.4rem; font-weight: 800; color: white; text-decoration: none; }
+    .header-logo:hover { color: #ff4b4b; }
     .header-links a { color: #a3a8b8; text-decoration: none; margin-left: 25px; font-weight: 600; font-size: 0.95rem; transition: color 0.2s ease; }
     .header-links a:hover { color: #ff4b4b; }
     .block-container { padding-top: 90px !important; padding-bottom: 80px !important; }
     .custom-footer { position: fixed; bottom: 0; left: 0; width: 100%; background-color: #0e1117; padding: 12px 0; text-align: center; border-top: 1px solid #2e303e; color: #6b7280; font-size: 0.85rem; z-index: 99999; }
     </style>
+    
     <div class="custom-header">
-        <div class="header-logo">🎬 AutoDirector AI</div>
+        <a href="/" target="_top" class="header-logo">🎬 AutoDirector AI</a>
         <div class="header-links">
             <a href="/" target="_top">Dashboard</a>
             <a href="/pricing" target="_top">Pricing</a>
