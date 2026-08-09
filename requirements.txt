@@ -3,4 +3,4 @@ faster-whisper
 google-genai
 numpy<2.0.0
 opencv-python-headless==4.10.0.84
-yt-dlp yt-dlp
+yt-dlp
