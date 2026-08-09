@@ -21,7 +21,8 @@ os.makedirs(PREVIEW_DIR, exist_ok=True)
 
 @st.cache_resource
 def load_whisper_model():
-    return WhisperModel("base", device="cpu", compute_type="int8")
+    # Optimized for GitHub Codespaces CPU speed
+    return WhisperModel("tiny", device="cpu", compute_type="int8", cpu_threads=4, num_workers=2)
 
 whisper_model = load_whisper_model()
 
@@ -161,7 +162,7 @@ elif st.session_state.current_step == "dashboard":
                         Transcript:
                         {"\n".join(transcript_lines)}
                         """
-                        res = client.models.generate_content(model='gemini-1.5-flash-001', contents=prompt)
+                        res = client.models.generate_content(model='gemini-1.5-flash', contents=prompt)
                         clean_json = re.sub(r'```json\n|\n```|```', '', res.text).strip()
                         st.session_state.detected_clips = json.loads(clean_json)
                     except Exception as e:
