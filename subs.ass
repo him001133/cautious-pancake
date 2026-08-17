@@ -1,0 +1,33 @@
+[Script Info]
+ScriptType: v4.00+
+PlayResX: 1080
+PlayResY: 1920
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Impact,90,&H0000FFFF,&H000000FF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,3,5,2,5,10,10,0,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:00.00,0:00:00.61,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}THAT HELPS TENS
+Dialogue: 0,0:00:00.61,0:00:01.21,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}OF THOUSANDS OF
+Dialogue: 0,0:00:01.21,0:00:01.84,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}CREATORS TURN\NTHEIR
+Dialogue: 0,0:00:01.84,0:00:02.45,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}KNOWLEDGE,\NAUDIENCES, AND
+Dialogue: 0,0:00:02.45,0:00:03.06,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}PERSONAL
+Dialogue: 0,0:00:03.06,0:00:03.64,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}BRANDS INTO REAL
+Dialogue: 0,0:00:03.64,0:00:04.24,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}BUSINESSES.
+Dialogue: 0,0:00:04.54,0:00:05.23,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}RAISED BY A
+Dialogue: 0,0:00:05.23,0:00:05.92,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}SINGLE MOTHER WHO
+Dialogue: 0,0:00:05.92,0:00:06.59,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}BALANCED A\NDEMANDING
+Dialogue: 0,0:00:06.59,0:00:07.29,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}CAREER,\NENTREPRENEURSHIP,\NAND
+Dialogue: 0,0:00:07.29,0:00:07.98,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}COMMUNITY
+Dialogue: 0,0:00:07.98,0:00:08.99,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}LEADERSHIP, JOHN\NDEVELOPED
+Dialogue: 0,0:00:08.99,0:00:10.00,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}AN EARLY\NAPPRECIATION
+Dialogue: 0,0:00:10.00,0:00:11.00,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}FOR HARD WORK,
+Dialogue: 0,0:00:11.00,0:00:12.01,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}CALCULATED RISK-\NTAKING, AND
+Dialogue: 0,0:00:12.01,0:00:12.62,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}SELF-RELIANCE.
+Dialogue: 0,0:00:12.61,0:00:13.09,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}BEFORE STARTING\NSTAN,
+Dialogue: 0,0:00:13.09,0:00:13.57,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}HE BEGAN HIS
+Dialogue: 0,0:00:13.57,0:00:14.05,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}CAREER AT GOLDMAN
+Dialogue: 0,0:00:14.05,0:00:14.51,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}SACHS, BUT HIS
+Dialogue: 0,0:00:14.51,0:00:15.00,Default,,0,0,0,,{\pos(540,1300)\fscx50\fscy50\t(0,200,\fscx100\fscy100)}PATH EVENTUALLY\NLED
